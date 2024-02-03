@@ -1,14 +1,23 @@
 # OS
-.DS_Store/
-thumbs.db
-time-travel.*
+
 
 # IDE
-.vscode/
-.vs/
-.idea/
-*.iml
+.cursor/
 
-# Rust
-target/
-Cargo.lock
+# Node
+node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+.env
+.env.*
+*.pem
+
+# npm placeholder publish (from vmz-framework pattern)
+.placeholder-npm-cache.json
+scripts/.placeholder-npm-cache.json
+.env.placeholder.local

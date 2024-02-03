@@ -1,0 +1,45 @@
+{
+    "name": "@yydb/sql-studio-orm",
+    "version": "0.1.0",
+    "description": "SQL Studio ORM — schema-first, type-first SQL toolkit",
+    "type": "module",
+    "license": "MPL-2.0",
+    "sideEffects": false,
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "import": "./src/index.ts",
+            "default": "./src/index.ts"
+        },
+        "./schema": {
+            "types": "./src/schema/index.ts",
+            "import": "./src/schema/index.ts",
+            "default": "./src/schema/index.ts"
+        },
+        "./migrations": {
+            "types": "./src/migrations/index.ts",
+            "import": "./src/migrations/index.ts",
+            "default": "./src/migrations/index.ts"
+        },
+        "./codegen": {
+            "types": "./src/codegen/index.ts",
+            "import": "./src/codegen/index.ts",
+            "default": "./src/codegen/index.ts"
+        }
+    },
+    "files": [
+        "src",
+        "README.md"
+    ],
+    "scripts": {
+        "typecheck": "tsc --noEmit -p tsconfig.json"
+    },
+    "devDependencies": {
+        "typescript": "^5.9.2"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}

@@ -1,11 +1,23 @@
 {
+    "name": "@yydb/sql-studio-workspace",
     "private": true,
+    "description": "SQL Studio — agent-first workbench, ORM, drivers, and skills",
+    "packageManager": "pnpm@10.0.0",
+    "type": "module",
     "scripts": {
-        "doc": "cargo doc --no-deps --all-features",
-        "test": "cargo test --release",
-        "fmt": "cargo fmt --all",
-        "p": "git push && git push --tags --prune",
-        "reset": "git reset Head~ --soft",
-        "u": "cargo upgrade --workspace"
+        "fmt": "node scripts/format.mjs",
+        "fmt:check": "node scripts/format.mjs --check",
+        "typecheck": "node scripts/typecheck.mjs",
+        "pack:check": "node scripts/pack-check.mjs",
+        "export:guard": "node scripts/export-guard.mjs",
+        "test": "node scripts/test.mjs",
+        "sql": "pnpm --filter @yydb/sql-studio exec node ./src/cli.ts",
+        "placeholder": "node scripts/ci/publish-placeholder.mjs",
+        "placeholder:publish": "node scripts/ci/publish-placeholder.mjs publish",
+        "placeholder:trust": "node scripts/ci/publish-placeholder.mjs trust"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.4.8",
+        "typescript": "^5.9.2"
     }
 }
