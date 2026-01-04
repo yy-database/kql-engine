@@ -1,11 +1,12 @@
 use kql_parser::Parser;
+use kql_parser::parser::Precedence;
 use kql_ast::{Expr, Decl, LiteralKind, BinaryOpKind};
 
 #[test]
 fn test_parse_expression() {
     let source = "1 + 2 * 3";
     let mut parser = Parser::new(source);
-    let expr = parser.parse_expression(0).unwrap();
+    let expr = parser.parse_expression(Precedence::None).unwrap();
     
     // Simple check to ensure it parsed
     if let Expr::Binary(binary) = expr {
@@ -33,7 +34,7 @@ fn test_parse_struct() {
 
 #[test]
 fn test_parse_enum() {
-    let source = "enum Status { Active, Inactive, Pending(String) }";
+    let source = "enum Status { Active, Inactive, Pending { message: String } }";
     let mut parser = Parser::new(source);
     let decl = parser.parse_declaration().unwrap();
     

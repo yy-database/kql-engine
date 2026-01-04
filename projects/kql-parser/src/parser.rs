@@ -23,7 +23,6 @@ impl<'a> Parser<'a> {
         // Initialize tokens, skipping trivia
         parser.advance();
         parser.advance();
-        parser.advance();
         parser
     }
 
@@ -227,8 +226,7 @@ impl<'a> Parser<'a> {
     pub fn parse_expression(&mut self, precedence: Precedence) -> Result<Expr> {
         let mut left = self.parse_prefix()?;
         
-        while precedence < self.peek_precedence() {
-            self.advance();
+        while precedence < self.curr_precedence() {
             left = self.parse_infix(left)?;
         }
 
