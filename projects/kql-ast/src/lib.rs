@@ -220,6 +220,7 @@ impl AstNode for Type {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct NamedType {
     pub name: String,
+    pub args: Option<Vec<Type>>,
     pub span: Span,
 }
 

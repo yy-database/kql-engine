@@ -15,6 +15,7 @@ pub enum HirType {
     Enum(HirId),
     List(Box<HirType>),
     Optional(Box<HirType>),
+    Key(Box<HirType>),
     Unknown,
 }
 
@@ -81,35 +82,47 @@ pub enum HirUnaryOp {
     Not,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirAttribute {
+    pub name: String,
+    pub args: Vec<HirExpr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirStruct {
     pub id: HirId,
+    pub attrs: Vec<HirAttribute>,
     pub name: String,
     pub fields: Vec<HirField>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirField {
+    pub attrs: Vec<HirAttribute>,
     pub name: String,
     pub ty: HirType,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirEnum {
     pub id: HirId,
+    pub attrs: Vec<HirAttribute>,
     pub name: String,
     pub variants: Vec<HirVariant>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirVariant {
+    pub attrs: Vec<HirAttribute>,
     pub name: String,
     pub fields: Option<Vec<HirField>>,
     pub span: Span,
@@ -119,6 +132,7 @@ pub struct HirVariant {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirLet {
     pub id: HirId,
+    pub attrs: Vec<HirAttribute>,
     pub name: String,
     pub ty: HirType,
     pub value: HirExpr,

@@ -12,6 +12,9 @@ kql-ast = { workspace = true }
 serde = { workspace = true, optional = true }
 sqlparser = "0.43"
 
+[dev-dependencies]
+kql-parser = { workspace = true }
+
 [features]
 default = []
 serde = ["dep:serde", "kql-types/serde", "kql-ast/serde"]

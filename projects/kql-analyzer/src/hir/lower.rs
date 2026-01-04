@@ -46,46 +46,107 @@ impl Lowerer {
 
     fn lower_struct(&mut self, s: ast::StructDecl) -> Result<HirStruct> {
         let id = *self.db.name_to_id.get(&s.name.name).unwrap();
+        let attrs = self.lower_attrs(s.attrs)?;
         let mut fields = Vec::new();
         for f in s.fields {
-            fields.push(HirField { name: f.name.name, ty: self.lower_type(f.ty)?, span: f.span });
+            fields.push(HirField {
+                attrs: self.lower_attrs(f.attrs)?,
+                name: f.name.name,
+                ty: self.lower_type(f.ty)?,
+                span: f.span,
+            });
         }
-        Ok(HirStruct { id, name: s.name.name, fields, span: s.span })
+        Ok(HirStruct {
+            id,
+            attrs,
+            name: s.name.name,
+            fields,
+            span: s.span,
+        })
     }
 
     fn lower_enum(&mut self, e: ast::EnumDecl) -> Result<HirEnum> {
         let id = *self.db.name_to_id.get(&e.name.name).unwrap();
+        let attrs = self.lower_attrs(e.attrs)?;
         let mut variants = Vec::new();
         for v in e.variants {
             let fields = if let Some(f_vec) = v.fields {
                 let mut hir_f_vec = Vec::new();
                 for f in f_vec {
-                    hir_f_vec.push(HirField { name: f.name.name, ty: self.lower_type(f.ty)?, span: f.span });
+                    hir_f_vec.push(HirField {
+                        attrs: self.lower_attrs(f.attrs)?,
+                        name: f.name.name,
+                        ty: self.lower_type(f.ty)?,
+                        span: f.span,
+                    });
                 }
                 Some(hir_f_vec)
-            }
-            else {
+            } else {
                 None
             };
-            variants.push(HirVariant { name: v.name.name, fields, span: v.span });
+            variants.push(HirVariant {
+                attrs: self.lower_attrs(v.attrs)?,
+                name: v.name.name,
+                fields,
+                span: v.span,
+            });
         }
-        Ok(HirEnum { id, name: e.name.name, variants, span: e.span })
+        Ok(HirEnum {
+            id,
+            attrs,
+            name: e.name.name,
+            variants,
+            span: e.span,
+        })
     }
 
     fn lower_let(&mut self, l: ast::LetDecl) -> Result<HirLet> {
         let id = *self.db.name_to_id.get(&l.name.name).unwrap();
+        let attrs = self.lower_attrs(l.attrs)?;
         let value = self.lower_expr(l.value)?;
-        let ty = if let Some(ast_ty) = l.ty { self.lower_type(ast_ty)? } else { value.ty.clone() };
+        let ty = if let Some(ast_ty) = l.ty {
+            self.lower_type(ast_ty)?
+        } else {
+            value.ty.clone()
+        };
 
         // Type checking for let assignment
         if ty != HirType::Unknown && value.ty != HirType::Unknown && ty != value.ty {
             return Err(KqlError::semantic(
                 l.span,
-                format!("Type mismatch in let binding: expected {:?}, found {:?}", ty, value.ty),
+                format!(
+                    "Type mismatch in let binding: expected {:?}, found {:?}",
+                    ty, value.ty
+                ),
             ));
         }
 
-        Ok(HirLet { id, name: l.name.name, ty, value, span: l.span })
+        Ok(HirLet {
+            id,
+            attrs,
+            name: l.name.name,
+            ty,
+            value,
+            span: l.span,
+        })
+    }
+
+    fn lower_attrs(&mut self, attrs: Vec<ast::Attribute>) -> Result<Vec<HirAttribute>> {
+        let mut hir_attrs = Vec::new();
+        for attr in attrs {
+            let mut args = Vec::new();
+            if let Some(ast_args) = attr.args {
+                for arg in ast_args {
+                    args.push(self.lower_expr(arg)?);
+                }
+            }
+            hir_attrs.push(HirAttribute {
+                name: attr.name.name,
+                args,
+                span: attr.span,
+            });
+        }
+        Ok(hir_attrs)
     }
 
     fn lower_type(&mut self, ty: ast::Type) -> Result<HirType> {
