@@ -67,9 +67,19 @@ pub struct BinaryOp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BinaryOpKind {
-    Add, Sub, Mul, Div, Mod,
-    Eq, NotEq, Gt, Lt, GtEq, LtEq,
-    And, Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    NotEq,
+    Gt,
+    Lt,
+    GtEq,
+    LtEq,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,7 +100,8 @@ pub struct UnaryOp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum UnaryOpKind {
-    Neg, Not,
+    Neg,
+    Not,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

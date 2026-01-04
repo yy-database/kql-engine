@@ -1,6 +1,5 @@
+use kql_hir::{HirDatabase, lower::Lowerer};
 use kql_parser::Parser;
-use kql_hir::lower::Lowerer;
-use kql_hir::HirDatabase;
 use kql_types::Result;
 
 pub struct Compiler {
@@ -9,9 +8,7 @@ pub struct Compiler {
 
 impl Compiler {
     pub fn new() -> Self {
-        Self {
-            db: HirDatabase::default(),
-        }
+        Self { db: HirDatabase::default() }
     }
 
     pub fn compile(&mut self, source: &str) -> Result<()> {
@@ -23,9 +20,7 @@ impl Compiler {
             decls.push(parser.parse_declaration()?);
         }
 
-        let mut lowerer = Lowerer {
-            db: std::mem::take(&mut self.db),
-        };
+        let mut lowerer = Lowerer { db: std::mem::take(&mut self.db) };
 
         lowerer.lower_decls(decls)?;
         self.db = lowerer.db;
@@ -49,7 +44,7 @@ mod tests {
         ";
         let mut compiler = Compiler::new();
         compiler.compile(source).unwrap();
-        
+
         assert_eq!(compiler.db.name_to_id.len(), 2);
         assert!(compiler.db.name_to_id.contains_key("User"));
         assert!(compiler.db.name_to_id.contains_key("x"));

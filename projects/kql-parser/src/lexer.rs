@@ -1,6 +1,5 @@
 use kql_types::Span;
-use std::str::Chars;
-use std::iter::Peekable;
+use std::{iter::Peekable, str::Chars};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
@@ -17,7 +16,7 @@ pub enum TokenKind {
     Case,
     Lambda,
     Type,
-    
+
     // Symbols
     LBrace,      // {
     RBrace,      // }
@@ -48,17 +47,17 @@ pub enum TokenKind {
     Percent,     // %
     Pipe,        // |
     Ampersand,   // &
-    
+
     // Literals
     Ident,
     String,
     Number,
     Boolean,
-    
+
     // Trivia (Important for Lossless parsing)
     Whitespace,
     Comment,
-    
+
     // Special
     Error(String),
     EOF,
@@ -79,16 +78,12 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self {
-            source,
-            chars: source.chars().peekable(),
-            cursor: 0,
-        }
+        Self { source, chars: source.chars().peekable(), cursor: 0 }
     }
 
     pub fn next_token(&mut self) -> Token {
         let start = self.cursor;
-        
+
         let kind = match self.advance() {
             Some(c) => match c {
                 // Whitespace
@@ -96,7 +91,7 @@ impl<'a> Lexer<'a> {
                     self.consume_while(|c| c.is_whitespace());
                     TokenKind::Whitespace
                 }
-                
+
                 // Comments
                 '/' if self.peek() == Some('/') => {
                     self.consume_while(|c| c != '\n');
@@ -112,13 +107,13 @@ impl<'a> Lexer<'a> {
                     }
                     TokenKind::Comment
                 }
-                
+
                 // Numbers
                 c if c.is_ascii_digit() => {
                     self.consume_while(|c| c.is_ascii_digit() || c == '.');
                     TokenKind::Number
                 }
-                
+
                 // Identifiers & Keywords
                 c if c.is_alphabetic() || c == '_' => {
                     self.consume_while(|c| c.is_alphanumeric() || c == '_');
@@ -141,7 +136,7 @@ impl<'a> Lexer<'a> {
                         _ => TokenKind::Ident,
                     }
                 }
-                
+
                 // Strings
                 '"' => {
                     while let Some(c) = self.peek() {
@@ -172,32 +167,66 @@ impl<'a> Lexer<'a> {
                 '@' => TokenKind::At,
                 '$' => TokenKind::Dollar,
                 '+' => TokenKind::Plus,
-                '-' => if self.peek() == Some('>') { self.advance(); TokenKind::Arrow } else { TokenKind::Minus },
+                '-' => {
+                    if self.peek() == Some('>') {
+                        self.advance();
+                        TokenKind::Arrow
+                    }
+                    else {
+                        TokenKind::Minus
+                    }
+                }
                 '*' => TokenKind::Star,
                 '/' => TokenKind::Slash,
                 '%' => TokenKind::Percent,
                 '|' => TokenKind::Pipe,
                 '&' => TokenKind::Ampersand,
                 '=' => match self.peek() {
-                    Some('=') => { self.advance(); TokenKind::DoubleEq }
-                    Some('>') => { self.advance(); TokenKind::DoubleArrow }
+                    Some('=') => {
+                        self.advance();
+                        TokenKind::DoubleEq
+                    }
+                    Some('>') => {
+                        self.advance();
+                        TokenKind::DoubleArrow
+                    }
                     _ => TokenKind::Eq,
                 },
-                '!' => if self.peek() == Some('=') { self.advance(); TokenKind::NotEq } else { TokenKind::Error("Unexpected !".into()) },
-                '>' => if self.peek() == Some('=') { self.advance(); TokenKind::GreaterEq } else { TokenKind::Greater },
-                '<' => if self.peek() == Some('=') { self.advance(); TokenKind::LessEq } else { TokenKind::Less },
-                
+                '!' => {
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        TokenKind::NotEq
+                    }
+                    else {
+                        TokenKind::Error("Unexpected !".into())
+                    }
+                }
+                '>' => {
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        TokenKind::GreaterEq
+                    }
+                    else {
+                        TokenKind::Greater
+                    }
+                }
+                '<' => {
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        TokenKind::LessEq
+                    }
+                    else {
+                        TokenKind::Less
+                    }
+                }
+
                 _ => TokenKind::Error(format!("Unexpected character: {}", c)),
-            }
+            },
             None => TokenKind::EOF,
         };
 
         let end = self.cursor;
-        Token {
-            kind,
-            span: Span { start, end },
-            text: self.source[start..end].to_string(),
-        }
+        Token { kind, span: Span { start, end }, text: self.source[start..end].to_string() }
     }
 
     fn peek(&mut self) -> Option<char> {
@@ -219,7 +248,8 @@ impl<'a> Lexer<'a> {
         while let Some(c) = self.peek() {
             if f(c) {
                 self.advance();
-            } else {
+            }
+            else {
                 break;
             }
         }

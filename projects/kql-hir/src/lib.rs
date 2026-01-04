@@ -41,20 +41,10 @@ pub struct HirExpr {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirExprKind {
     Literal(HirLiteral),
-    Binary {
-        left: Box<HirExpr>,
-        op: HirBinaryOp,
-        right: Box<HirExpr>,
-    },
-    Unary {
-        op: HirUnaryOp,
-        expr: Box<HirExpr>,
-    },
+    Binary { left: Box<HirExpr>, op: HirBinaryOp, right: Box<HirExpr> },
+    Unary { op: HirUnaryOp, expr: Box<HirExpr> },
     Variable(HirId),
-    Call {
-        func: Box<HirExpr>,
-        args: Vec<HirExpr>,
-    },
+    Call { func: Box<HirExpr>, args: Vec<HirExpr> },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,15 +59,26 @@ pub enum HirLiteral {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirBinaryOp {
-    Add, Sub, Mul, Div, Mod,
-    Eq, NotEq, Gt, Lt, GtEq, LtEq,
-    And, Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    NotEq,
+    Gt,
+    Lt,
+    GtEq,
+    LtEq,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirUnaryOp {
-    Neg, Not,
+    Neg,
+    Not,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

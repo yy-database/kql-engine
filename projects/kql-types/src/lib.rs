@@ -13,9 +13,6 @@ pub struct Span {
 
 impl From<Range<usize>> for Span {
     fn from(range: Range<usize>) -> Self {
-        Self {
-            start: range.start,
-            end: range.end,
-        }
+        Self { start: range.start, end: range.end }
     }
 }
