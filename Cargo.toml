@@ -26,6 +26,7 @@ kql-analyzer = { path = "projects/kql-analyzer" }
 kql-core = { path = "projects/kql-core" }
 kql-cli = { path = "projects/kql-cli" }
 kql-wasi = { path = "projects/kql-wasi" }
+kql-transpiler = { path = "projects/kql-transpiler" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 clap = { version = "4.4", features = ["derive", "env"] }

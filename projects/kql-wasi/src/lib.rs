@@ -46,4 +46,8 @@ impl Guest for KqlCompiler {
         // Join statements with semicolons
         Ok(sql_statements.join(";\n") + ";")
     }
+
+    fn transpile_sql_to_kql(sql: String) -> Result<String, String> {
+        kql_transpiler::Transpiler::transpile(&sql).map_err(|e| e.to_string())
+    }
 }
