@@ -261,13 +261,13 @@ impl Lowerer {
                     ast::LiteralKind::Number(n) => {
                         if n.contains('.') {
                             (
-                                HirExprKind::Literal(HirLiteral::Float(n.parse().unwrap_or(0.0))),
+                                HirExprKind::Literal(HirLiteral::Float64(n.parse().unwrap_or(0.0))),
                                 HirType::Primitive(PrimitiveType::F32),
                             )
                         }
                         else {
                             (
-                                HirExprKind::Literal(HirLiteral::Int(n.parse().unwrap_or(0))),
+                                HirExprKind::Literal(HirLiteral::Integer64(n.parse().unwrap_or(0))),
                                 HirType::Primitive(PrimitiveType::I32),
                             )
                         }

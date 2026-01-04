@@ -47,13 +47,19 @@ impl SqlGenerator {
             });
         }
 
+        let mut name_parts = Vec::new();
+        if let Some(schema) = &table.schema {
+            name_parts.push(Ident::new(schema));
+        }
+        name_parts.push(Ident::new(&table.name));
+
         Statement::CreateTable {
             or_replace: false,
             temporary: false,
             external: false,
             if_not_exists: true,
             transient: false,
-            name: ObjectName(vec![Ident::new(&table.name)]),
+            name: ObjectName(name_parts),
             columns,
             constraints,
             with_options: vec![],

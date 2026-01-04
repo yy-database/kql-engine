@@ -58,8 +58,8 @@ pub enum HirExprKind {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirLiteral {
-    Int(i64),
-    Float(f64),
+    Integer64(i64),
+    Float64(f64),
     String(String),
     Bool(bool),
 }
