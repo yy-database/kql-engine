@@ -1,5 +1,5 @@
 use super::*;
-use crate::hir::{HirDatabase, HirStruct, HirType, PrimitiveType};
+use crate::hir::{HirDatabase, HirStruct, HirType, PrimitiveType, HirExprKind, HirLiteral};
 use kql_types::Result;
 
 pub struct MirLowerer {
@@ -26,7 +26,8 @@ impl MirLowerer {
     fn lower_struct_to_table(&self, s: &HirStruct) -> Result<Table> {
         let mut columns = Vec::new();
         let mut primary_key = None;
-        let indexes = Vec::new();
+        let mut indexes = Vec::new();
+        let mut table_name = s.name.clone();
 
         for f in &s.fields {
             let mut is_pk = false;
@@ -36,7 +37,7 @@ impl MirLowerer {
             let mut current_ty = &f.ty;
             loop {
                 match current_ty {
-                    HirType::Key(inner) => {
+                    HirType::Key { inner, .. } => {
                         is_pk = true;
                         current_ty = inner;
                     }
@@ -73,6 +74,20 @@ impl MirLowerer {
                     "nullable" => {
                         col.nullable = true;
                     }
+                    "unique" => {
+                        indexes.push(Index {
+                            name: format!("{}_{}_unique", table_name, f.name),
+                            columns: vec![f.name.clone()],
+                            unique: true,
+                        });
+                    }
+                    "index" => {
+                        indexes.push(Index {
+                            name: format!("{}_{}_idx", table_name, f.name),
+                            columns: vec![f.name.clone()],
+                            unique: false,
+                        });
+                    }
                     _ => {}
                 }
             }
@@ -82,18 +97,92 @@ impl MirLowerer {
         // Also check struct-level attributes for composite primary keys or indexes
         for attr in &s.attrs {
             match attr.name.as_str() {
+                "table" => {
+                    if let Some(arg) = attr.args.first() {
+                        if let HirExprKind::Literal(HirLiteral::String(name)) = &arg.kind {
+                            table_name = name.clone();
+                        }
+                    }
+                }
                 "primary_key" => {
-                    // TODO: Handle composite PK from args
+                    let mut pk_cols = Vec::new();
+                    for arg in &attr.args {
+                        match &arg.kind {
+                            HirExprKind::Symbol(name) => {
+                                pk_cols.push(name.clone());
+                            }
+                            HirExprKind::Literal(HirLiteral::String(name)) => {
+                                pk_cols.push(name.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !pk_cols.is_empty() {
+                        primary_key = Some(pk_cols);
+                    }
                 }
                 "index" => {
-                    // TODO: Handle index from args
+                    let mut idx_cols = Vec::new();
+                    let idx_name = None;
+                    let unique = false;
+
+                    for arg in &attr.args {
+                        match &arg.kind {
+                            HirExprKind::Symbol(name) => {
+                                idx_cols.push(name.clone());
+                            }
+                            HirExprKind::Literal(HirLiteral::String(name)) => {
+                                // If it's the first arg and there are more, it might be the name
+                                // But usually we expect symbols for columns.
+                                // Let's keep it simple: all strings/symbols are columns for now.
+                                idx_cols.push(name.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // Check for named arguments or special flags if we had them.
+                    // For now, if there's a @unique attribute on the same struct, it's different.
+                    // But maybe @index(name: "foo", columns: [a, b], unique: true)
+                    // Our current parser doesn't support named args in attributes easily.
+
+                    if !idx_cols.is_empty() {
+                        let name = idx_name.unwrap_or_else(|| {
+                            format!("{}_{}_idx", table_name, idx_cols.join("_"))
+                        });
+                        indexes.push(Index {
+                            name,
+                            columns: idx_cols,
+                            unique,
+                        });
+                    }
+                }
+                "unique" => {
+                    // Similar to index but unique
+                    let mut idx_cols = Vec::new();
+                    for arg in &attr.args {
+                        match &arg.kind {
+                            HirExprKind::Symbol(name) | HirExprKind::Literal(HirLiteral::String(name)) => {
+                                idx_cols.push(name.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !idx_cols.is_empty() {
+                        let name = format!("{}_{}_unique", table_name, idx_cols.join("_"));
+                        indexes.push(Index {
+                            name,
+                            columns: idx_cols,
+                            unique: true,
+                        });
+                    }
                 }
                 _ => {}
             }
         }
 
         Ok(Table {
-            name: s.name.clone(),
+            name: table_name,
             columns,
             primary_key,
             indexes,

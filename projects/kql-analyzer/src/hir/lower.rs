@@ -142,7 +142,10 @@ impl Lowerer {
             let mut args = Vec::new();
             if let Some(ast_args) = attr.args {
                 for arg in ast_args {
-                    args.push(self.lower_expr(arg)?);
+                    args.push(HirAttributeArg {
+                        name: arg.name.map(|n| n.name),
+                        value: self.lower_expr(arg.value)?,
+                    });
                 }
             }
             hir_attrs.push(HirAttribute {
@@ -162,12 +165,27 @@ impl Lowerer {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
                             let inner = self.lower_type(args[0].clone())?;
-                            return Ok(HirType::Key(Box::new(inner)));
+                            return Ok(HirType::Key {
+                                entity: None,
+                                inner: Box::new(inner),
+                            });
+                        } else if args.len() == 2 {
+                            let entity_ty = self.lower_type(args[0].clone())?;
+                            let inner = self.lower_type(args[1].clone())?;
+                            let entity = if let HirType::Struct(id) = entity_ty {
+                                Some(id)
+                            } else {
+                                None
+                            };
+                            return Ok(HirType::Key {
+                                entity,
+                                inner: Box::new(inner),
+                            });
                         }
                     }
                     return Err(KqlError::semantic(
                         n.span,
-                        "Key type must have exactly one generic argument, e.g., Key<i32>".to_string(),
+                        "Key type must have one or two generic arguments, e.g., Key<i32> or Key<User, i32>".to_string(),
                     ));
                 }
 
@@ -281,7 +299,8 @@ impl Lowerer {
                     Ok(HirExpr { kind: HirExprKind::Variable(id), ty, span: v.span })
                 }
                 else {
-                    Err(KqlError::semantic(v.span, format!("Undefined variable: {}", v.name)))
+                    // If not found in global scope, treat as a symbol (might be a field name)
+                    Ok(HirExpr { kind: HirExprKind::Symbol(v.name), ty: HirType::Unknown, span: v.span })
                 }
             }
             ast::Expr::Binary(b) => {

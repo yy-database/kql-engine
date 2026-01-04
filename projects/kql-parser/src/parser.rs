@@ -89,7 +89,16 @@ impl<'a> Parser<'a> {
             if self.consume(TokenKind::LParen) {
                 let mut arg_vec = Vec::new();
                 while self.curr.kind != TokenKind::RParen && self.curr.kind != TokenKind::EOF {
-                    arg_vec.push(self.parse_expression(Precedence::None)?);
+                    let mut arg_name = None;
+                    // Check if it's a named argument (ident :)
+                    if self.curr.kind == TokenKind::Ident && self.peek.kind == TokenKind::Colon {
+                        arg_name = Some(self.parse_ident()?);
+                        self.expect(TokenKind::Colon)?;
+                    }
+
+                    let value = self.parse_expression(Precedence::None)?;
+                    arg_vec.push(AttributeArg { name: arg_name, value });
+
                     if !self.consume(TokenKind::Comma) && self.curr.kind != TokenKind::RParen {
                         break;
                     }
@@ -318,7 +327,8 @@ impl<'a> Parser<'a> {
                 Ok(expr)
             }
             TokenKind::String => {
-                let expr = Expr::Literal(LiteralExpr { kind: LiteralKind::String(token.text.clone()), span: token.span });
+                let text = &token.text[1..token.text.len() - 1];
+                let expr = Expr::Literal(LiteralExpr { kind: LiteralKind::String(text.to_string()), span: token.span });
                 self.advance();
                 Ok(expr)
             }

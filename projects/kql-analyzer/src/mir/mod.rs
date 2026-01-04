@@ -17,6 +17,7 @@ impl Default for MirDatabase {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table {
+    pub schema: Option<String>,
     pub name: String,
     pub columns: Vec<Column>,
     pub primary_key: Option<Vec<String>>,

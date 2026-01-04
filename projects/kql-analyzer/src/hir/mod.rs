@@ -15,7 +15,10 @@ pub enum HirType {
     Enum(HirId),
     List(Box<HirType>),
     Optional(Box<HirType>),
-    Key(Box<HirType>),
+    Key {
+        entity: Option<HirId>,
+        inner: Box<HirType>,
+    },
     Unknown,
 }
 
@@ -48,6 +51,7 @@ pub enum HirExprKind {
     Binary { left: Box<HirExpr>, op: HirBinaryOp, right: Box<HirExpr> },
     Unary { op: HirUnaryOp, expr: Box<HirExpr> },
     Variable(HirId),
+    Symbol(String),
     Call { func: Box<HirExpr>, args: Vec<HirExpr> },
 }
 
@@ -89,8 +93,15 @@ pub enum HirUnaryOp {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirAttribute {
     pub name: String,
-    pub args: Vec<HirExpr>,
+    pub args: Vec<HirAttributeArg>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirAttributeArg {
+    pub name: Option<String>,
+    pub value: HirExpr,
 }
 
 #[derive(Debug, Clone, PartialEq)]

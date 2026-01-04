@@ -123,8 +123,15 @@ pub struct CallExpr {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Attribute {
     pub name: Ident,
-    pub args: Option<Vec<Expr>>,
+    pub args: Option<Vec<AttributeArg>>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AttributeArg {
+    pub name: Option<Ident>,
+    pub value: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

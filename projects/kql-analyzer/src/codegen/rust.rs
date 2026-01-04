@@ -82,7 +82,7 @@ impl RustGenerator {
             HirType::Enum(id) => self.db.enums.get(id).map(|e| e.name.clone()).unwrap_or_else(|| "UnknownEnum".to_string()),
             HirType::List(inner) => format!("Vec<{}>", self.gen_type(inner)),
             HirType::Optional(inner) => format!("Option<{}>", self.gen_type(inner)),
-            HirType::Key(inner) => self.gen_type(inner),
+            HirType::Key { inner, .. } => self.gen_type(inner),
             HirType::Unknown => "()".to_string(),
         }
     }

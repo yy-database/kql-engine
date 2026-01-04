@@ -13,7 +13,10 @@ impl Transpiler {
         for statement in ast {
             if let Statement::CreateTable { name, columns, constraints, .. } = statement {
                 let table_name = name.to_string();
-                kql.push_str(&format!("struct {} {{\n", table_name));
+                let struct_name = to_pascal_case(&table_name);
+                
+                kql.push_str(&format!("@table(\"{}\")\n", table_name));
+                kql.push_str(&format!("struct {} {{\n", struct_name));
                 for col in columns {
                     let col_kql = transpile_column(&col, &table_name, &constraints);
                     kql.push_str(&format!("    {},\n", col_kql));
@@ -24,6 +27,31 @@ impl Transpiler {
 
         Ok(kql.trim().to_string())
     }
+}
+
+fn to_pascal_case(s: &str) -> String {
+    let mut result = String::new();
+    let mut capitalize_next = true;
+
+    for c in s.chars() {
+        if c == '_' || c == '-' || c == ' ' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            result.push(c.to_ascii_uppercase());
+            capitalize_next = false;
+        } else {
+            result.push(c.to_ascii_lowercase());
+        }
+    }
+
+    // Handle the case where the name ends in 's' (common for tables like 'users')
+    // and we want the struct to be singular (User).
+    // This is a simple heuristic.
+    if result.ends_with('s') && result.len() > 1 {
+        result.pop();
+    }
+
+    result
 }
 
 fn transpile_column(col: &ColumnDef, _table_name: &str, table_constraints: &[TableConstraint]) -> String {
@@ -95,7 +123,7 @@ mod tests {
         let kql = Transpiler::transpile(sql).unwrap();
         assert_eq!(
             kql,
-            "struct users {\n    id: Key<i32>,\n    name: String,\n    age: i32?,\n}"
+            "@table(\"users\")\nstruct User {\n    id: Key<i32>,\n    name: String,\n    age: i32?,\n}"
         );
     }
 }
