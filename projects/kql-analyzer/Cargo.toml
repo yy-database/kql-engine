@@ -1,0 +1,17 @@
+[package]
+name = "kql-analyzer"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Analyzer for KQL, including HIR, MIR and LIR"
+
+[dependencies]
+kql-types = { workspace = true }
+kql-ast = { workspace = true }
+serde = { workspace = true, optional = true }
+sqlparser = "0.43"
+
+[features]
+default = []
+serde = ["dep:serde", "kql-types/serde", "kql-ast/serde"]
