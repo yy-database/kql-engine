@@ -1,4 +1,4 @@
-use kql_hir::{HirDatabase, lower::Lowerer};
+use kql_analyzer::hir::{HirDatabase, lower::Lowerer};
 use kql_parser::Parser;
 use kql_types::Result;
 

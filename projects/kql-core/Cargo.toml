@@ -9,10 +9,10 @@ description = "Core compiler and runtime for KQL"
 [dependencies]
 kql-parser = { workspace = true }
 kql-ast = { workspace = true }
-kql-hir = { workspace = true }
+kql-analyzer = { workspace = true }
 kql-types = { workspace = true }
 serde = { workspace = true, optional = true }
 
 [features]
 default = []
-serde = ["dep:serde", "kql-parser/serde", "kql-ast/serde", "kql-hir/serde", "kql-types/serde"]
+serde = ["dep:serde", "kql-parser/serde", "kql-ast/serde", "kql-analyzer/serde", "kql-types/serde"]
