@@ -26,7 +26,7 @@ impl Transpiler {
     }
 }
 
-fn transpile_column(col: &ColumnDef, table_name: &str, table_constraints: &[TableConstraint]) -> String {
+fn transpile_column(col: &ColumnDef, _table_name: &str, table_constraints: &[TableConstraint]) -> String {
     let name = col.name.to_string();
     let mut kql_type = match &col.data_type {
         DataType::Int(_) | DataType::Integer(_) => "i32".to_string(),
@@ -76,7 +76,7 @@ fn transpile_column(col: &ColumnDef, table_name: &str, table_constraints: &[Tabl
     }
 
     if is_primary {
-        format!("{}: Key<{}, {}>", name, table_name, kql_type)
+        format!("{}: Key<{}>", name, kql_type)
     } else {
         if is_nullable {
             kql_type.push('?');
@@ -95,7 +95,7 @@ mod tests {
         let kql = Transpiler::transpile(sql).unwrap();
         assert_eq!(
             kql,
-            "struct users {\n    id: Key<users, i32>,\n    name: String,\n    age: i32?,\n}"
+            "struct users {\n    id: Key<i32>,\n    name: String,\n    age: i32?,\n}"
         );
     }
 }

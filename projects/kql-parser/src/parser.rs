@@ -131,9 +131,7 @@ impl<'a> Parser<'a> {
         let mut fields = Vec::new();
         while self.curr.kind != TokenKind::RBrace && self.curr.kind != TokenKind::EOF {
             fields.push(self.parse_field()?);
-            if !self.consume(TokenKind::Comma) && self.curr.kind != TokenKind::RBrace {
-                break;
-            }
+            self.consume(TokenKind::Comma);
         }
 
         let end_span = self.expect(TokenKind::RBrace)?.span;
@@ -164,9 +162,7 @@ impl<'a> Parser<'a> {
         let mut variants = Vec::new();
         while self.curr.kind != TokenKind::RBrace && self.curr.kind != TokenKind::EOF {
             variants.push(self.parse_variant()?);
-            if !self.consume(TokenKind::Comma) && self.curr.kind != TokenKind::RBrace {
-                break;
-            }
+            self.consume(TokenKind::Comma);
         }
 
         let end_span = self.expect(TokenKind::RBrace)?.span;

@@ -1,0 +1,10 @@
+struct User {
+    id: Key<i32>
+    name: String
+    age: i32?
+}
+
+enum Status {
+    Active
+    Inactive
+}
