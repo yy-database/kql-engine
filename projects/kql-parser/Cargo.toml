@@ -1,0 +1,11 @@
+[package]
+name = "kql-parser"
+version = "0.0.0"
+authors = ["Aster <192607617@qq.com>"]
+edition = "2021"
+license = "MPL-2.0"
+description = "Hand-written Pratt Parser for KQL"
+
+[dependencies]
+kql-types = { path = "../kql-types" }
+kql-ast = { path = "../kql-ast" }

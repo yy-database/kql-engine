@@ -8,6 +8,7 @@ time-travel.*
 .vs/
 .idea/
 *.iml
+.trae/
 
 # Rust
 target/
