@@ -2,7 +2,8 @@
 resolver = "2"
 members = ["projects/*"]
 default-members = [
-    "projects/kql-core",
+    "projects/kql-ast",
+    "projects/kql-parser",
 ]
 exclude = [
     "projects/.DS_Store",

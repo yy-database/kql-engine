@@ -1,6 +1,7 @@
 use kql_types::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Trivia {
     Whitespace(String),
     Comment(String),
@@ -11,6 +12,7 @@ pub trait AstNode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Expr {
     Literal(LiteralExpr),
     Binary(BinaryExpr),
@@ -32,12 +34,14 @@ impl AstNode for Expr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LiteralExpr {
     pub kind: LiteralKind,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LiteralKind {
     Number(String),
     String(String),
@@ -45,6 +49,7 @@ pub enum LiteralKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BinaryExpr {
     pub left: Box<Expr>,
     pub op: BinaryOp,
@@ -53,12 +58,14 @@ pub struct BinaryExpr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BinaryOp {
     pub kind: BinaryOpKind,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BinaryOpKind {
     Add, Sub, Mul, Div, Mod,
     Eq, NotEq, Gt, Lt, GtEq, LtEq,
@@ -66,6 +73,7 @@ pub enum BinaryOpKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UnaryExpr {
     pub op: UnaryOp,
     pub expr: Box<Expr>,
@@ -73,23 +81,27 @@ pub struct UnaryExpr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UnaryOp {
     pub kind: UnaryOpKind,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum UnaryOpKind {
     Neg, Not,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VariableExpr {
     pub name: String,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CallExpr {
     pub func: Box<Expr>,
     pub args: Vec<Expr>,
@@ -97,6 +109,7 @@ pub struct CallExpr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Decl {
     Struct(StructDecl),
     Enum(EnumDecl),
@@ -114,6 +127,7 @@ impl AstNode for Decl {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StructDecl {
     pub name: Ident,
     pub fields: Vec<Field>,
@@ -121,6 +135,7 @@ pub struct StructDecl {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EnumDecl {
     pub name: Ident,
     pub variants: Vec<Variant>,
@@ -128,6 +143,7 @@ pub struct EnumDecl {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LetDecl {
     pub name: Ident,
     pub ty: Option<Type>,
@@ -136,6 +152,7 @@ pub struct LetDecl {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Field {
     pub name: Ident,
     pub ty: Type,
@@ -143,6 +160,7 @@ pub struct Field {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Variant {
     pub name: Ident,
     pub fields: Option<Vec<Field>>,
@@ -150,12 +168,14 @@ pub struct Variant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Ident {
     pub name: String,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Type {
     Named(NamedType),
     List(ListType),
@@ -173,18 +193,21 @@ impl AstNode for Type {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct NamedType {
     pub name: String,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ListType {
     pub inner: Box<Type>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OptionalType {
     pub inner: Box<Type>,
     pub span: Span,

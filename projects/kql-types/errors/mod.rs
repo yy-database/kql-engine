@@ -6,17 +6,17 @@ mod display;
 mod convert;
 
 /// The result type of this crate.
-pub type Result<T> = std::result::Result<T, ExampleError>;
+pub type Result<T> = std::result::Result<T, KqlError>;
 
-/// A boxed error kind, wrapping an [ExampleErrorKind].
+/// A boxed error kind, wrapping an [KqlErrorKind].
 #[derive(Clone)]
-pub struct ExampleError {
-    kind: Box<ExampleErrorKind>,
+pub struct KqlError {
+    kind: Box<KqlErrorKind>,
 }
 
-/// The kind of [ExampleError].
+/// The kind of [KqlError].
 #[derive(Debug, Copy, Clone)]
-pub enum ExampleErrorKind {
+pub enum KqlErrorKind {
     /// An unknown error.
     UnknownError
 }

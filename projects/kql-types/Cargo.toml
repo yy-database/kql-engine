@@ -8,4 +8,8 @@ description = "Common types and error definitions for KQL"
 
 [dependencies]
 thiserror = "1.0"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
