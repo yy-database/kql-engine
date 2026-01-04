@@ -84,10 +84,11 @@ impl SqlGenerator {
 
     fn generate_column_def(&self, col: &Column) -> ColumnDef {
         let data_type = match &col.ty {
-            ColumnType::Int32 => DataType::Int(None),
-            ColumnType::Int64 => DataType::BigInt(None),
-            ColumnType::Float32 => DataType::Float(None),
-            ColumnType::Float64 => DataType::Double,
+            ColumnType::I16 => DataType::SmallInt(None),
+            ColumnType::I32 => DataType::Int(None),
+            ColumnType::I64 => DataType::BigInt(None),
+            ColumnType::F32 => DataType::Float(None),
+            ColumnType::F64 => DataType::Double,
             ColumnType::String(len) => DataType::Varchar(len.map(|l| CharacterLength::IntegerLength {
                 length: l as u64,
                 unit: None,
@@ -96,6 +97,7 @@ impl SqlGenerator {
             ColumnType::DateTime => DataType::Timestamp(None, sqlparser::ast::TimezoneInfo::None),
             ColumnType::Uuid => DataType::Uuid,
             ColumnType::Json => DataType::JSON,
+            ColumnType::Decimal128 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
         };
 
         let mut options = Vec::new();

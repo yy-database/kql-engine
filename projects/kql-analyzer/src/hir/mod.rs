@@ -22,12 +22,15 @@ pub enum HirType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PrimitiveType {
-    Integer32,
-    Float32,
+    I32,
+    I64,
+    F32,
+    F64,
     String,
     Bool,
     DateTime,
     Uuid,
+    D128,
 }
 
 #[derive(Debug, Clone, PartialEq)]

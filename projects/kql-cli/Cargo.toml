@@ -11,6 +11,7 @@ kql-core = { workspace = true, features = ["serde"] }
 kql-types = { workspace = true, features = ["serde", "sqlx"] }
 kql-parser = { workspace = true }
 kql-analyzer = { workspace = true, features = ["serde"] }
+kql-transpiler = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }

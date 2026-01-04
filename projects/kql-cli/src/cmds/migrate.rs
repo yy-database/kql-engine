@@ -39,7 +39,15 @@ impl MigrateArgs {
         let mir_db = mir_gen.lower()?;
 
         // 4. LIR (SQL) Generation
-        let sql_gen = SqlGenerator::new(mir_db);
+        let dialect = if self.database_url.starts_with("postgres") || self.database_url.starts_with("postgresql") {
+            kql_analyzer::lir::SqlDialect::Postgres
+        } else if self.database_url.starts_with("mysql") || self.database_url.starts_with("mariadb") {
+            kql_analyzer::lir::SqlDialect::MySql
+        } else {
+            kql_analyzer::lir::SqlDialect::Sqlite
+        };
+
+        let sql_gen = SqlGenerator::new(mir_db, dialect);
         let sql_statements = sql_gen.generate_ddl_sql();
 
         if self.dry_run {

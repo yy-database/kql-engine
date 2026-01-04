@@ -34,15 +34,17 @@ pub struct Column {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ColumnType {
-    Int32,
-    Int64,
-    Float32,
-    Float64,
+    I16,
+    I32,
+    I64,
+    F32,
+    F64,
     String(Option<usize>), // Optional length
     Bool,
     DateTime,
     Uuid,
     Json,
+    Decimal128,
 }
 
 #[derive(Debug, Clone, PartialEq)]

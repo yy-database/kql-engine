@@ -103,17 +103,20 @@ impl MirLowerer {
     fn lower_hir_type_to_mir(&self, ty: &HirType) -> Result<ColumnType> {
         match ty {
             HirType::Primitive(p) => match p {
-                PrimitiveType::Integer32 => Ok(ColumnType::Int32),
-                PrimitiveType::Float32 => Ok(ColumnType::Float32),
+                PrimitiveType::I32 => Ok(ColumnType::I32),
+                PrimitiveType::I64 => Ok(ColumnType::I64),
+                PrimitiveType::F32 => Ok(ColumnType::F32),
+                PrimitiveType::F64 => Ok(ColumnType::F64),
                 PrimitiveType::String => Ok(ColumnType::String(None)),
                 PrimitiveType::Bool => Ok(ColumnType::Bool),
                 PrimitiveType::DateTime => Ok(ColumnType::DateTime),
                 PrimitiveType::Uuid => Ok(ColumnType::Uuid),
+                PrimitiveType::D128 => Ok(ColumnType::Decimal128),
             },
-            HirType::Optional(inner) => self.lower_hir_type_to_mir(inner),
-            HirType::Key(inner) => self.lower_hir_type_to_mir(inner),
-            HirType::List(_inner) => Ok(ColumnType::Json), // Handle list as JSON for now
-            _ => Ok(ColumnType::Json),
+            HirType::Struct(_) => Ok(ColumnType::Json),
+            HirType::Enum(_) => Ok(ColumnType::I32),
+            HirType::List(_) => Ok(ColumnType::Json),
+            _ => Ok(ColumnType::String(None)),
         }
     }
 }

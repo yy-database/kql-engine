@@ -1,35 +1,28 @@
 use sqlparser::ast::{ColumnDef, DataType, Statement, TableConstraint};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-use anyhow::{Result, anyhow};
 
 pub struct Transpiler;
 
 impl Transpiler {
-    pub fn transpile(sql: &str) -> Result<String> {
+    pub fn transpile(sql: &str) -> Result<String, String> {
         let dialect = GenericDialect {};
-        let ast = Parser::parse_sql(&dialect, sql)?;
+        let ast = Parser::parse_sql(&dialect, sql).map_err(|e| e.to_string())?;
 
-        let mut kql_output = String::new();
-
-        for stmt in ast {
-            match stmt {
-                Statement::CreateTable { name, columns, constraints, .. } => {
-                    let table_name = name.to_string();
-                    kql_output.push_str(&format!("struct {} {{\n", table_name));
-
-                    for col in columns {
-                        let col_str = self::transpile_column(&col, &table_name, &constraints);
-                        kql_output.push_str(&format!("    {},\n", col_str));
-                    }
-
-                    kql_output.push_str("}\n\n");
+        let mut kql = String::new();
+        for statement in ast {
+            if let Statement::CreateTable { name, columns, constraints, .. } = statement {
+                let table_name = name.to_string();
+                kql.push_str(&format!("struct {} {{\n", table_name));
+                for col in columns {
+                    let col_kql = transpile_column(&col, &table_name, &constraints);
+                    kql.push_str(&format!("    {},\n", col_kql));
                 }
-                _ => return Err(anyhow!("Unsupported SQL statement: {:?}", stmt)),
+                kql.push_str("}\n\n");
             }
         }
 
-        Ok(kql_output.trim().to_string())
+        Ok(kql.trim().to_string())
     }
 }
 
@@ -37,15 +30,15 @@ fn transpile_column(col: &ColumnDef, table_name: &str, table_constraints: &[Tabl
     let name = col.name.to_string();
     let mut kql_type = match &col.data_type {
         DataType::Int(_) | DataType::Integer(_) => "i32".to_string(),
-        DataType::SmallInt(_) => "i16".to_string(),
-        DataType::BigInt(_) => "i64".to_string(),
-        DataType::Float(_) | DataType::Real => "f32".to_string(),
-        DataType::Double | DataType::DoublePrecision => "f64".to_string(),
-        DataType::Boolean => "Boolean".to_string(),
-        DataType::Varchar(_) | DataType::Text | DataType::String(_) => "String".to_string(),
-        DataType::Timestamp(_, _) | DataType::Datetime(_) => "DateTime".to_string(),
-        DataType::Uuid => "UUID".to_string(),
-        DataType::Decimal(_) | DataType::Numeric(_) => "d128".to_string(),
+                DataType::SmallInt(_) => "i16".to_string(),
+                DataType::BigInt(_) => "i64".to_string(),
+                DataType::Float(_) | DataType::Real => "f32".to_string(),
+                DataType::Double | DataType::DoublePrecision => "f64".to_string(),
+        DataType::Boolean => "bool".to_string(),
+                DataType::Varchar(_) | DataType::Text | DataType::String(_) => "String".to_string(),
+                DataType::Timestamp(_, _) | DataType::Datetime(_) => "DateTime".to_string(),
+                DataType::Uuid => "UUID".to_string(),
+                DataType::Decimal(_) | DataType::Numeric(_) => "d128".to_string(),
         _ => "String".to_string(), // Default to String for unknown types
     };
 
@@ -100,6 +93,9 @@ mod tests {
     fn test_transpile_basic() {
         let sql = "CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(255) NOT NULL, age INT)";
         let kql = Transpiler::transpile(sql).unwrap();
-        assert_eq!(kql, "struct users {\n    id: int32 @primary,\n    name: string,\n    age: int32?,\n}");
+        assert_eq!(
+            kql,
+            "struct users {\n    id: Key<users, i32>,\n    name: String,\n    age: i32?,\n}"
+        );
     }
 }

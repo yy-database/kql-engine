@@ -200,12 +200,15 @@ impl Lowerer {
                 }
 
                 match n.name.as_str() {
-                    "i32" | "i64" => Ok(HirType::Primitive(PrimitiveType::Integer32)),
-                    "f32" | "f64" => Ok(HirType::Primitive(PrimitiveType::Float32)),
+                    "i32" => Ok(HirType::Primitive(PrimitiveType::I32)),
+                    "i64" => Ok(HirType::Primitive(PrimitiveType::I64)),
+                    "f32" => Ok(HirType::Primitive(PrimitiveType::F32)),
+                    "f64" => Ok(HirType::Primitive(PrimitiveType::F64)),
                     "String" => Ok(HirType::Primitive(PrimitiveType::String)),
                     "bool" => Ok(HirType::Primitive(PrimitiveType::Bool)),
-                    "date_time" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
-                    "uuid" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
+                    "DateTime" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
+                    "UUID" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
+                    "d128" => Ok(HirType::Primitive(PrimitiveType::D128)),
                     _ => {
                         if let Some(&id) = self.db.name_to_id.get(&n.name) {
                             match self.db.id_to_kind.get(&id) {
@@ -241,13 +244,13 @@ impl Lowerer {
                         if n.contains('.') {
                             (
                                 HirExprKind::Literal(HirLiteral::Float(n.parse().unwrap_or(0.0))),
-                                HirType::Primitive(PrimitiveType::Float32),
+                                HirType::Primitive(PrimitiveType::F32),
                             )
                         }
                         else {
                             (
                                 HirExprKind::Literal(HirLiteral::Int(n.parse().unwrap_or(0))),
-                                HirType::Primitive(PrimitiveType::Integer32),
+                                HirType::Primitive(PrimitiveType::I32),
                             )
                         }
                     }
@@ -329,7 +332,7 @@ impl Lowerer {
         match op {
             HirBinaryOp::Add | HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div | HirBinaryOp::Mod => {
                 if left.ty == right.ty
-                    && matches!(left.ty, HirType::Primitive(PrimitiveType::Integer32 | PrimitiveType::Float32))
+                    && matches!(left.ty, HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128))
                 {
                     Ok(left.ty.clone())
                 }
@@ -352,7 +355,7 @@ impl Lowerer {
                 if left.ty == right.ty
                     && matches!(
                         left.ty,
-                        HirType::Primitive(PrimitiveType::Integer32 | PrimitiveType::Float32 | PrimitiveType::DateTime)
+                        HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::DateTime)
                     )
                 {
                     Ok(HirType::Primitive(PrimitiveType::Bool))
@@ -378,7 +381,7 @@ impl Lowerer {
     fn check_unary_op(&self, op: HirUnaryOp, expr: &HirExpr, span: Span) -> Result<HirType> {
         match op {
             HirUnaryOp::Neg => {
-                if matches!(expr.ty, HirType::Primitive(PrimitiveType::Integer32 | PrimitiveType::Float32)) {
+                if matches!(expr.ty, HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128)) {
                     Ok(expr.ty.clone())
                 }
                 else {
