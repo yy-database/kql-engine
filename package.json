@@ -7,5 +7,6 @@
         "p": "git push && git push --tags --prune",
         "reset": "git reset Head~ --soft",
         "u": "cargo upgrade --workspace"
-    }
+    },
+    "packageManager": "pnpm@10.27.0"
 }

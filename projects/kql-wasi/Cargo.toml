@@ -10,9 +10,11 @@ description = "WASI component for KQL"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-kql-core = { workspace = true }
-kql-types = { workspace = true }
+kql-core = { workspace = true, features = ["serde"] }
+kql-types = { workspace = true, features = ["serde"] }
+kql-analyzer = { workspace = true, features = ["serde"] }
 wit-bindgen = "0.17.0"
+serde_json = "1.0"
 
 [features]
 default = []

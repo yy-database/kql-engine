@@ -1,3 +1,4 @@
+use crate::lir::SqlDialect;
 use crate::mir::{Column, ColumnType, MirDatabase, Table};
 use sqlparser::ast::{
     CharacterLength, ColumnDef, ColumnOption, ColumnOptionDef, DataType, Ident, ObjectName,
@@ -7,11 +8,12 @@ use sqlparser::tokenizer::Token;
 
 pub struct SqlGenerator {
     pub mir_db: MirDatabase,
+    pub dialect: SqlDialect,
 }
 
 impl SqlGenerator {
-    pub fn new(mir_db: MirDatabase) -> Self {
-        Self { mir_db }
+    pub fn new(mir_db: MirDatabase, dialect: SqlDialect) -> Self {
+        Self { mir_db, dialect }
     }
 
     pub fn generate_ddl(&self) -> Vec<Statement> {

@@ -13,3 +13,8 @@ time-travel.*
 # Rust
 target/
 Cargo.lock
+
+# Node
+node_modules/
+kql-ts/
+kql-playground/

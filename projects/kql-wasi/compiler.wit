@@ -1,6 +1,13 @@
 package kql:engine;
 
 world compiler {
+    enum sql-dialect {
+        postgres,
+        mysql,
+        sqlite
+    }
+
     export check: func(source: string) -> result<_, string>;
-    export compile: func(source: string) -> result<string, string>;
+    export compile-to-json: func(source: string) -> result<string, string>;
+    export compile-to-sql: func(source: string, dialect: sql-dialect) -> result<string, string>;
 }
