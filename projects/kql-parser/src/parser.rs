@@ -63,11 +63,43 @@ impl<'a> Parser<'a> {
 
     // --- Declarations ---
 
+    fn parse_attributes(&mut self) -> Result<Vec<Attribute>> {
+        let mut attrs = Vec::new();
+        while self.curr.kind == TokenKind::At {
+            let start_span = self.curr.span.clone();
+            self.advance();
+            let name = self.parse_ident()?;
+            let mut args = None;
+            if self.consume(TokenKind::LParen) {
+                let mut arg_vec = Vec::new();
+                while self.curr.kind != TokenKind::RParen && self.curr.kind != TokenKind::EOF {
+                    arg_vec.push(self.parse_expression(Precedence::None)?);
+                    if !self.consume(TokenKind::Comma) && self.curr.kind != TokenKind::RParen {
+                        break;
+                    }
+                }
+                self.expect(TokenKind::RParen)?;
+                args = Some(arg_vec);
+            }
+            let end_span = self.prev.span.clone();
+            attrs.push(Attribute {
+                name,
+                args,
+                span: Span {
+                    start: start_span.start,
+                    end: end_span.end,
+                },
+            });
+        }
+        Ok(attrs)
+    }
+
     pub fn parse_declaration(&mut self) -> Result<Decl> {
+        let attrs = self.parse_attributes()?;
         match self.curr.kind {
-            TokenKind::Struct => self.parse_struct_declaration().map(Decl::Struct),
-            TokenKind::Enum => self.parse_enum_declaration().map(Decl::Enum),
-            TokenKind::Let => self.parse_let_declaration().map(Decl::Let),
+            TokenKind::Struct => self.parse_struct_declaration(attrs).map(Decl::Struct),
+            TokenKind::Enum => self.parse_enum_declaration(attrs).map(Decl::Enum),
+            TokenKind::Let => self.parse_let_declaration(attrs).map(Decl::Let),
             _ => Err(KqlError::parse(
                 self.curr.span.clone(),
                 format!("Expected declaration (struct, enum, let), found {:?}", self.curr.kind),
@@ -75,7 +107,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_struct_declaration(&mut self) -> Result<StructDecl> {
+    fn parse_struct_declaration(&mut self, attrs: Vec<Attribute>) -> Result<StructDecl> {
         let start_span = self.expect(TokenKind::Struct)?.span;
         let name = self.parse_ident()?;
         self.expect(TokenKind::LBrace)?;
@@ -89,18 +121,26 @@ impl<'a> Parser<'a> {
         }
 
         let end_span = self.expect(TokenKind::RBrace)?.span;
-        Ok(StructDecl { name, fields, span: Span { start: start_span.start, end: end_span.end } })
+        let span = Span {
+            start: attrs.first().map(|a| a.span.start).unwrap_or(start_span.start),
+            end: end_span.end,
+        };
+        Ok(StructDecl { attrs, name, fields, span })
     }
 
     fn parse_field(&mut self) -> Result<Field> {
+        let attrs = self.parse_attributes()?;
         let name = self.parse_ident()?;
         self.expect(TokenKind::Colon)?;
         let ty = self.parse_type()?;
-        let span = Span { start: name.span.start, end: ty.span().end };
-        Ok(Field { name, ty, span })
+        let span = Span {
+            start: attrs.first().map(|a| a.span.start).unwrap_or(name.span.start),
+            end: ty.span().end,
+        };
+        Ok(Field { attrs, name, ty, span })
     }
 
-    fn parse_enum_declaration(&mut self) -> Result<EnumDecl> {
+    fn parse_enum_declaration(&mut self, attrs: Vec<Attribute>) -> Result<EnumDecl> {
         let start_span = self.expect(TokenKind::Enum)?.span;
         let name = self.parse_ident()?;
         self.expect(TokenKind::LBrace)?;
@@ -114,10 +154,15 @@ impl<'a> Parser<'a> {
         }
 
         let end_span = self.expect(TokenKind::RBrace)?.span;
-        Ok(EnumDecl { name, variants, span: Span { start: start_span.start, end: end_span.end } })
+        let span = Span {
+            start: attrs.first().map(|a| a.span.start).unwrap_or(start_span.start),
+            end: end_span.end,
+        };
+        Ok(EnumDecl { attrs, name, variants, span })
     }
 
     fn parse_variant(&mut self) -> Result<Variant> {
+        let attrs = self.parse_attributes()?;
         let name = self.parse_ident()?;
         let mut fields = None;
         let mut end_pos = name.span.end;
@@ -134,10 +179,14 @@ impl<'a> Parser<'a> {
             fields = Some(f_vec);
         }
 
-        Ok(Variant { name: name.clone(), fields, span: Span { start: name.span.start, end: end_pos } })
+        let span = Span {
+            start: attrs.first().map(|a| a.span.start).unwrap_or(name.span.start),
+            end: end_pos,
+        };
+        Ok(Variant { attrs, name: name.clone(), fields, span })
     }
 
-    fn parse_let_declaration(&mut self) -> Result<LetDecl> {
+    fn parse_let_declaration(&mut self, attrs: Vec<Attribute>) -> Result<LetDecl> {
         let start_span = self.expect(TokenKind::Let)?.span;
         let name = self.parse_ident()?;
 
@@ -150,7 +199,11 @@ impl<'a> Parser<'a> {
         let value = self.parse_expression(Precedence::None)?;
         let end_span = value.span().end;
 
-        Ok(LetDecl { name, ty, value, span: Span { start: start_span.start, end: end_span } })
+        let span = Span {
+            start: attrs.first().map(|a| a.span.start).unwrap_or(start_span.start),
+            end: end_span,
+        };
+        Ok(LetDecl { attrs, name, ty, value, span })
     }
 
     // --- Types ---

@@ -1,6 +1,6 @@
 use crate::*;
 use kql_ast as ast;
-use kql_types::{KqlError, Result};
+use kql_types::{KqlError, Result, Span};
 
 pub struct Lowerer {
     pub db: HirDatabase,
@@ -14,13 +14,14 @@ impl Lowerer {
     pub fn lower_decls(&mut self, decls: Vec<ast::Decl>) -> Result<()> {
         // First pass: Collect all names to allow forward references
         for decl in &decls {
-            let name = match decl {
-                ast::Decl::Struct(s) => &s.name.name,
-                ast::Decl::Enum(e) => &e.name.name,
-                ast::Decl::Let(l) => &l.name.name,
+            let (name, kind) = match decl {
+                ast::Decl::Struct(s) => (&s.name.name, HirKind::Struct),
+                ast::Decl::Enum(e) => (&e.name.name, HirKind::Enum),
+                ast::Decl::Let(l) => (&l.name.name, HirKind::Let),
             };
             let id = self.db.alloc_id();
             self.db.name_to_id.insert(name.clone(), id);
+            self.db.id_to_kind.insert(id, kind);
         }
 
         // Second pass: Lower actual content
@@ -75,29 +76,40 @@ impl Lowerer {
         let id = *self.db.name_to_id.get(&l.name.name).unwrap();
         let value = self.lower_expr(l.value)?;
         let ty = if let Some(ast_ty) = l.ty { self.lower_type(ast_ty)? } else { value.ty.clone() };
+
+        // Type checking for let assignment
+        if ty != HirType::Unknown && value.ty != HirType::Unknown && ty != value.ty {
+            return Err(KqlError::semantic(
+                l.span,
+                format!("Type mismatch in let binding: expected {:?}, found {:?}", ty, value.ty),
+            ));
+        }
+
         Ok(HirLet { id, name: l.name.name, ty, value, span: l.span })
     }
 
     fn lower_type(&mut self, ty: ast::Type) -> Result<HirType> {
         match ty {
-            ast::Type::Named(n) => {
-                match n.name.as_str() {
-                    "i32" | "i64" => Ok(HirType::Primitive(PrimitiveType::Int)),
-                    "f32" | "f64" => Ok(HirType::Primitive(PrimitiveType::Float)),
-                    "String" => Ok(HirType::Primitive(PrimitiveType::String)),
-                    "Bool" => Ok(HirType::Primitive(PrimitiveType::Bool)),
-                    _ => {
-                        if let Some(&id) = self.db.name_to_id.get(&n.name) {
-                            // Check if it's a struct or enum
-                            // For now, assume if it exists in name_to_id, it's a valid type
-                            Ok(HirType::Struct(id)) // Simplified: should distinguish between struct/enum
-                        }
-                        else {
-                            Err(KqlError::semantic(n.span, format!("Unknown type: {}", n.name)))
+            ast::Type::Named(n) => match n.name.as_str() {
+                "i32" | "i64" => Ok(HirType::Primitive(PrimitiveType::Integer32)),
+                "f32" | "f64" => Ok(HirType::Primitive(PrimitiveType::Float32)),
+                "String" => Ok(HirType::Primitive(PrimitiveType::String)),
+                "bool" => Ok(HirType::Primitive(PrimitiveType::Bool)),
+                "date_time" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
+                "uuid" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
+                _ => {
+                    if let Some(&id) = self.db.name_to_id.get(&n.name) {
+                        match self.db.id_to_kind.get(&id) {
+                            Some(HirKind::Struct) => Ok(HirType::Struct(id)),
+                            Some(HirKind::Enum) => Ok(HirType::Enum(id)),
+                            _ => Err(KqlError::semantic(n.span, format!("'{}' is not a valid type", n.name))),
                         }
                     }
+                    else {
+                        Err(KqlError::semantic(n.span, format!("Unknown type: {}", n.name)))
+                    }
                 }
-            }
+            },
             ast::Type::List(l) => {
                 let inner = self.lower_type(*l.inner)?;
                 Ok(HirType::List(Box::new(inner)))
@@ -114,7 +126,18 @@ impl Lowerer {
             ast::Expr::Literal(l) => {
                 let (kind, ty) = match l.kind {
                     ast::LiteralKind::Number(n) => {
-                        (HirExprKind::Literal(HirLiteral::Int(n.parse().unwrap_or(0))), HirType::Primitive(PrimitiveType::Int))
+                        if n.contains('.') {
+                            (
+                                HirExprKind::Literal(HirLiteral::Float(n.parse().unwrap_or(0.0))),
+                                HirType::Primitive(PrimitiveType::Float32),
+                            )
+                        }
+                        else {
+                            (
+                                HirExprKind::Literal(HirLiteral::Int(n.parse().unwrap_or(0))),
+                                HirType::Primitive(PrimitiveType::Integer32),
+                            )
+                        }
                     }
                     ast::LiteralKind::String(s) => {
                         (HirExprKind::Literal(HirLiteral::String(s)), HirType::Primitive(PrimitiveType::String))
@@ -127,8 +150,19 @@ impl Lowerer {
             }
             ast::Expr::Variable(v) => {
                 if let Some(&id) = self.db.name_to_id.get(&v.name) {
-                    // Find type of the variable
-                    let ty = if let Some(l) = self.db.lets.get(&id) { l.ty.clone() } else { HirType::Unknown };
+                    let ty = if let Some(l) = self.db.lets.get(&id) {
+                        l.ty.clone()
+                    }
+                    else if let Some(kind) = self.db.id_to_kind.get(&id) {
+                        match kind {
+                            HirKind::Struct => HirType::Struct(id),
+                            HirKind::Enum => HirType::Enum(id),
+                            HirKind::Let => HirType::Unknown,
+                        }
+                    }
+                    else {
+                        HirType::Unknown
+                    };
                     Ok(HirExpr { kind: HirExprKind::Variable(id), ty, span: v.span })
                 }
                 else {
@@ -153,8 +187,8 @@ impl Lowerer {
                     ast::BinaryOpKind::And => HirBinaryOp::And,
                     ast::BinaryOpKind::Or => HirBinaryOp::Or,
                 };
-                // Basic type inference: use left type
-                let ty = left.ty.clone();
+
+                let ty = self.check_binary_op(&left, op, &right, b.span)?;
                 Ok(HirExpr { kind: HirExprKind::Binary { left: Box::new(left), op, right: Box::new(right) }, ty, span: b.span })
             }
             ast::Expr::Unary(u) => {
@@ -163,7 +197,8 @@ impl Lowerer {
                     ast::UnaryOpKind::Neg => HirUnaryOp::Neg,
                     ast::UnaryOpKind::Not => HirUnaryOp::Not,
                 };
-                let ty = expr.ty.clone();
+
+                let ty = self.check_unary_op(op, &expr, u.span)?;
                 Ok(HirExpr { kind: HirExprKind::Unary { op, expr: Box::new(expr) }, ty, span: u.span })
             }
             ast::Expr::Call(c) => {
@@ -172,9 +207,79 @@ impl Lowerer {
                 for a in c.args {
                     args.push(self.lower_expr(a)?);
                 }
-                // Call return type: Unknown for now
                 let ty = HirType::Unknown;
                 Ok(HirExpr { kind: HirExprKind::Call { func: Box::new(func), args }, ty, span: c.span })
+            }
+        }
+    }
+
+    fn check_binary_op(&self, left: &HirExpr, op: HirBinaryOp, right: &HirExpr, span: Span) -> Result<HirType> {
+        match op {
+            HirBinaryOp::Add | HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div | HirBinaryOp::Mod => {
+                if left.ty == right.ty
+                    && matches!(left.ty, HirType::Primitive(PrimitiveType::Integer32 | PrimitiveType::Float32))
+                {
+                    Ok(left.ty.clone())
+                }
+                else {
+                    Err(KqlError::semantic(
+                        span,
+                        format!("Cannot apply arithmetic operator {:?} to {:?} and {:?}", op, left.ty, right.ty),
+                    ))
+                }
+            }
+            HirBinaryOp::Eq | HirBinaryOp::NotEq => {
+                if left.ty == right.ty {
+                    Ok(HirType::Primitive(PrimitiveType::Bool))
+                }
+                else {
+                    Err(KqlError::semantic(span, format!("Cannot compare {:?} and {:?}", left.ty, right.ty)))
+                }
+            }
+            HirBinaryOp::Gt | HirBinaryOp::Lt | HirBinaryOp::GtEq | HirBinaryOp::LtEq => {
+                if left.ty == right.ty
+                    && matches!(
+                        left.ty,
+                        HirType::Primitive(PrimitiveType::Integer32 | PrimitiveType::Float32 | PrimitiveType::DateTime)
+                    )
+                {
+                    Ok(HirType::Primitive(PrimitiveType::Bool))
+                }
+                else {
+                    Err(KqlError::semantic(span, format!("Cannot compare {:?} and {:?}", left.ty, right.ty)))
+                }
+            }
+            HirBinaryOp::And | HirBinaryOp::Or => {
+                if left.ty == HirType::Primitive(PrimitiveType::Bool) && right.ty == HirType::Primitive(PrimitiveType::Bool) {
+                    Ok(HirType::Primitive(PrimitiveType::Bool))
+                }
+                else {
+                    Err(KqlError::semantic(
+                        span,
+                        format!("Logical operators require boolean operands, found {:?} and {:?}", left.ty, right.ty),
+                    ))
+                }
+            }
+        }
+    }
+
+    fn check_unary_op(&self, op: HirUnaryOp, expr: &HirExpr, span: Span) -> Result<HirType> {
+        match op {
+            HirUnaryOp::Neg => {
+                if matches!(expr.ty, HirType::Primitive(PrimitiveType::Integer32 | PrimitiveType::Float32)) {
+                    Ok(expr.ty.clone())
+                }
+                else {
+                    Err(KqlError::semantic(span, format!("Unary negation requires numeric type, found {:?}", expr.ty)))
+                }
+            }
+            HirUnaryOp::Not => {
+                if expr.ty == HirType::Primitive(PrimitiveType::Bool) {
+                    Ok(HirType::Primitive(PrimitiveType::Bool))
+                }
+                else {
+                    Err(KqlError::semantic(span, format!("Unary NOT requires boolean type, found {:?}", expr.ty)))
+                }
             }
         }
     }

@@ -121,6 +121,14 @@ pub struct CallExpr {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Attribute {
+    pub name: Ident,
+    pub args: Option<Vec<Expr>>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Decl {
     Struct(StructDecl),
     Enum(EnumDecl),
@@ -140,6 +148,7 @@ impl AstNode for Decl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StructDecl {
+    pub attrs: Vec<Attribute>,
     pub name: Ident,
     pub fields: Vec<Field>,
     pub span: Span,
@@ -148,6 +157,7 @@ pub struct StructDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EnumDecl {
+    pub attrs: Vec<Attribute>,
     pub name: Ident,
     pub variants: Vec<Variant>,
     pub span: Span,
@@ -156,6 +166,7 @@ pub struct EnumDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LetDecl {
+    pub attrs: Vec<Attribute>,
     pub name: Ident,
     pub ty: Option<Type>,
     pub value: Expr,
@@ -165,6 +176,7 @@ pub struct LetDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Field {
+    pub attrs: Vec<Attribute>,
     pub name: Ident,
     pub ty: Type,
     pub span: Span,
@@ -173,6 +185,7 @@ pub struct Field {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Variant {
+    pub attrs: Vec<Attribute>,
     pub name: Ident,
     pub fields: Option<Vec<Field>>,
     pub span: Span,

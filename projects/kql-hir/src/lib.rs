@@ -21,8 +21,8 @@ pub enum HirType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PrimitiveType {
-    Int,
-    Float,
+    Integer32,
+    Float32,
     String,
     Bool,
     DateTime,
@@ -132,7 +132,16 @@ pub struct HirDatabase {
     pub enums: HashMap<HirId, HirEnum>,
     pub lets: HashMap<HirId, HirLet>,
     pub name_to_id: HashMap<String, HirId>,
+    pub id_to_kind: HashMap<HirId, HirKind>,
     next_id: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum HirKind {
+    Struct,
+    Enum,
+    Let,
 }
 
 impl HirDatabase {
