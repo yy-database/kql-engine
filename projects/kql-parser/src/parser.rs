@@ -213,26 +213,67 @@ impl<'a> Parser<'a> {
         let mut ty = match token.kind {
             TokenKind::Ident => {
                 let name = token.text.clone();
-                let span = token.span.clone();
+                let start_span = token.span.clone();
                 self.advance();
-                Type::Named(NamedType { name, span })
+
+                let mut args = None;
+                let mut end_span = start_span.clone();
+
+                if self.curr.kind == TokenKind::Less {
+                    self.advance();
+                    let mut arg_vec = Vec::new();
+                    while self.curr.kind != TokenKind::Greater && self.curr.kind != TokenKind::EOF {
+                        arg_vec.push(self.parse_type()?);
+                        if !self.consume(TokenKind::Comma) && self.curr.kind != TokenKind::Greater {
+                            break;
+                        }
+                    }
+                    end_span = self.expect(TokenKind::Greater)?.span;
+                    args = Some(arg_vec);
+                }
+
+                Type::Named(NamedType {
+                    name,
+                    args,
+                    span: Span {
+                        start: start_span.start,
+                        end: end_span.end,
+                    },
+                })
             }
             TokenKind::LBracket => {
                 let start_span = token.span.clone();
                 self.advance();
                 let inner = self.parse_type()?;
                 let end_span = self.expect(TokenKind::RBracket)?.span;
-                Type::List(ListType { inner: Box::new(inner), span: Span { start: start_span.start, end: end_span.end } })
+                Type::List(ListType {
+                    inner: Box::new(inner),
+                    span: Span {
+                        start: start_span.start,
+                        end: end_span.end,
+                    },
+                })
             }
-            _ => return Err(KqlError::parse(token.span.clone(), format!("Expected type, found {:?}", token.kind))),
+            _ => {
+                return Err(KqlError::parse(
+                    token.span.clone(),
+                    format!("Expected type, found {:?}", token.kind),
+                ))
+            }
         };
 
         // Handle Optional (T?)
-        if self.curr.kind == TokenKind::Question {
+        while self.curr.kind == TokenKind::Question {
             let q_span = self.curr.span.clone();
             self.advance();
             let start = ty.span().start;
-            ty = Type::Optional(OptionalType { inner: Box::new(ty), span: Span { start, end: q_span.end } });
+            ty = Type::Optional(OptionalType {
+                inner: Box::new(ty),
+                span: Span {
+                    start,
+                    end: q_span.end,
+                },
+            });
         }
 
         Ok(ty)

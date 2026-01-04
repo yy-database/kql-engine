@@ -151,26 +151,72 @@ impl Lowerer {
 
     fn lower_type(&mut self, ty: ast::Type) -> Result<HirType> {
         match ty {
-            ast::Type::Named(n) => match n.name.as_str() {
-                "i32" | "i64" => Ok(HirType::Primitive(PrimitiveType::Integer32)),
-                "f32" | "f64" => Ok(HirType::Primitive(PrimitiveType::Float32)),
-                "String" => Ok(HirType::Primitive(PrimitiveType::String)),
-                "bool" => Ok(HirType::Primitive(PrimitiveType::Bool)),
-                "date_time" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
-                "uuid" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
-                _ => {
-                    if let Some(&id) = self.db.name_to_id.get(&n.name) {
-                        match self.db.id_to_kind.get(&id) {
-                            Some(HirKind::Struct) => Ok(HirType::Struct(id)),
-                            Some(HirKind::Enum) => Ok(HirType::Enum(id)),
-                            _ => Err(KqlError::semantic(n.span, format!("'{}' is not a valid type", n.name))),
+            ast::Type::Named(n) => {
+                // Special handling for Key<T>
+                if n.name == "Key" {
+                    if let Some(args) = n.args {
+                        if args.len() == 1 {
+                            let inner = self.lower_type(args[0].clone())?;
+                            return Ok(HirType::Key(Box::new(inner)));
                         }
                     }
-                    else {
-                        Err(KqlError::semantic(n.span, format!("Unknown type: {}", n.name)))
+                    return Err(KqlError::semantic(
+                        n.span,
+                        "Key type must have exactly one generic argument, e.g., Key<i32>".to_string(),
+                    ));
+                }
+
+                // Special handling for List<T> as an alternative to [T]
+                if n.name == "List" {
+                    if let Some(args) = n.args {
+                        if args.len() == 1 {
+                            let inner = self.lower_type(args[0].clone())?;
+                            return Ok(HirType::List(Box::new(inner)));
+                        }
+                    }
+                    return Err(KqlError::semantic(
+                        n.span,
+                        "List type must have exactly one generic argument, e.g., List<String>".to_string(),
+                    ));
+                }
+
+                // Special handling for Option<T> as an alternative to T?
+                if n.name == "Option" {
+                    if let Some(args) = n.args {
+                        if args.len() == 1 {
+                            let inner = self.lower_type(args[0].clone())?;
+                            return Ok(HirType::Optional(Box::new(inner)));
+                        }
+                    }
+                    return Err(KqlError::semantic(
+                        n.span,
+                        "Option type must have exactly one generic argument, e.g., Option<String>".to_string(),
+                    ));
+                }
+
+                match n.name.as_str() {
+                    "i32" | "i64" => Ok(HirType::Primitive(PrimitiveType::Integer32)),
+                    "f32" | "f64" => Ok(HirType::Primitive(PrimitiveType::Float32)),
+                    "String" => Ok(HirType::Primitive(PrimitiveType::String)),
+                    "bool" => Ok(HirType::Primitive(PrimitiveType::Bool)),
+                    "date_time" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
+                    "uuid" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
+                    _ => {
+                        if let Some(&id) = self.db.name_to_id.get(&n.name) {
+                            match self.db.id_to_kind.get(&id) {
+                                Some(HirKind::Struct) => Ok(HirType::Struct(id)),
+                                Some(HirKind::Enum) => Ok(HirType::Enum(id)),
+                                _ => Err(KqlError::semantic(
+                                    n.span,
+                                    format!("'{}' is not a valid type", n.name),
+                                )),
+                            }
+                        } else {
+                            Err(KqlError::semantic(n.span, format!("Unknown type: {}", n.name)))
+                        }
                     }
                 }
-            },
+            }
             ast::Type::List(l) => {
                 let inner = self.lower_type(*l.inner)?;
                 Ok(HirType::List(Box::new(inner)))

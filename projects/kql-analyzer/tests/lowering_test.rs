@@ -6,13 +6,11 @@ use kql_parser::parser::Parser;
 #[test]
 fn test_full_lowering_pipeline() {
     let input = r#"
-        @primary_key
         struct User {
             @auto_increment
-            id: i32,
+            id: Key<i32>,
             name: String,
-            @nullable
-            email: String
+            email: String?
         }
     "#;
 

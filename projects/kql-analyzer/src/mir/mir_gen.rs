@@ -29,13 +29,36 @@ impl MirLowerer {
         let indexes = Vec::new();
 
         for f in &s.fields {
+            let mut is_pk = false;
+            let mut is_nullable = false;
+
+            // Check if type is Key<T> or Optional<T>
+            let mut current_ty = &f.ty;
+            loop {
+                match current_ty {
+                    HirType::Key(inner) => {
+                        is_pk = true;
+                        current_ty = inner;
+                    }
+                    HirType::Optional(inner) => {
+                        is_nullable = true;
+                        current_ty = inner;
+                    }
+                    _ => break,
+                }
+            }
+
             let mut col = Column {
                 name: f.name.clone(),
-                ty: self.lower_hir_type_to_mir(&f.ty)?,
-                nullable: false, // Default to NOT NULL
+                ty: self.lower_hir_type_to_mir(current_ty)?,
+                nullable: is_nullable,
                 auto_increment: false,
                 default: None,
             };
+
+            if is_pk && primary_key.is_none() {
+                primary_key = Some(vec![f.name.clone()]);
+            }
 
             for attr in &f.attrs {
                 match attr.name.as_str() {
@@ -87,8 +110,10 @@ impl MirLowerer {
                 PrimitiveType::DateTime => Ok(ColumnType::DateTime),
                 PrimitiveType::Uuid => Ok(ColumnType::Uuid),
             },
-            HirType::Optional(inner) => self.lower_hir_type_to_mir(inner), // Handled by nullable flag in Column
-            _ => Ok(ColumnType::Json), // Fallback to JSON for complex types for now
+            HirType::Optional(inner) => self.lower_hir_type_to_mir(inner),
+            HirType::Key(inner) => self.lower_hir_type_to_mir(inner),
+            HirType::List(_inner) => Ok(ColumnType::Json), // Handle list as JSON for now
+            _ => Ok(ColumnType::Json),
         }
     }
 }
