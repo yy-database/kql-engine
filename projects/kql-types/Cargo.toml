@@ -1,14 +1,13 @@
 [package]
 name = "kql-types"
-version = "0.0.0"
-authors = ["Aster <192607617@qq.com>"]
-edition = "2021"
-license = "MPL-2.0"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
 description = "Common types and error definitions for KQL"
 
 [dependencies]
-thiserror = "1.0"
-serde = { version = "1.0", features = ["derive"], optional = true }
+serde = { workspace = true, optional = true }
 
 [features]
 default = []

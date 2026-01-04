@@ -1,24 +1,18 @@
 [package]
 name = "kql-core"
-publish = false
-version = "0.0.0"
-authors = ["Aster <192607617@qq.com>"]
-description = "..."
-categories = ["rust-patterns"]
-homepage = "https://github.com/oovm/RustTemplate"
-repository = "https://github.com/oovm/RustTemplate"
-documentation = "https://docs.rs/sub_projects"
-readme = "readme.md"
-license = "MPL-2.0"
-edition = "2021"
-exclude = ["package.json", "tests/**"]
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core compiler and runtime for KQL"
 
 [dependencies]
-
-[dev-dependencies]
+kql-parser = { workspace = true }
+kql-ast = { workspace = true }
+kql-hir = { workspace = true }
+kql-types = { workspace = true }
+serde = { workspace = true, optional = true }
 
 [features]
 default = []
-
-[package.metadata.docs.rs]
-all-features = true
+serde = ["dep:serde", "kql-parser/serde", "kql-ast/serde", "kql-hir/serde", "kql-types/serde"]

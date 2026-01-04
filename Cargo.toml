@@ -4,12 +4,30 @@ members = ["projects/*"]
 default-members = [
     "projects/kql-ast",
     "projects/kql-parser",
+    "projects/kql-core",
 ]
 exclude = [
     "projects/.DS_Store",
 ]
 
+[workspace.package]
+version = "0.0.0"
+authors = ["Aster <192607617@qq.com>"]
+edition = "2021"
+license = "MPL-2.0"
+repository = "https://github.com/aster-practice/kql-engine"
+
 [workspace.dependencies]
+kql-types = { path = "projects/kql-types" }
+kql-ast = { path = "projects/kql-ast" }
+kql-parser = { path = "projects/kql-parser" }
+kql-hir = { path = "projects/kql-hir" }
+kql-core = { path = "projects/kql-core" }
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0"
+itertools = "0.12"
+smallvec = "1.11"
+rowan = "0.15"
 
 [profile.release]
 lto = true

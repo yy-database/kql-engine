@@ -1,9 +1,57 @@
-#![deny(missing_debug_implementations, missing_copy_implementations)]
-#![warn(missing_docs, rustdoc::missing_crate_level_docs)]
-#![doc = include_str!("../readme.md")]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
+use kql_parser::Parser;
+use kql_hir::lower::Lowerer;
+use kql_hir::HirDatabase;
+use kql_types::Result;
 
-mod errors;
+pub struct Compiler {
+    pub db: HirDatabase,
+}
 
-pub use crate::errors::{KqlErrorKind, Result, KqlError};
+impl Compiler {
+    pub fn new() -> Self {
+        Self {
+            db: HirDatabase::default(),
+        }
+    }
+
+    pub fn compile(&mut self, source: &str) -> Result<()> {
+        let mut parser = Parser::new(source);
+        let mut decls = Vec::new();
+
+        // Simple loop to parse all declarations in the file
+        while !parser.is_eof() {
+            decls.push(parser.parse_declaration()?);
+        }
+
+        let mut lowerer = Lowerer {
+            db: std::mem::take(&mut self.db),
+        };
+
+        lowerer.lower_decls(decls)?;
+        self.db = lowerer.db;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compiler_basic() {
+        let source = "
+            struct User {
+                id: i32,
+                name: String
+            }
+            let x: i32 = 10
+        ";
+        let mut compiler = Compiler::new();
+        compiler.compile(source).unwrap();
+        
+        assert_eq!(compiler.db.name_to_id.len(), 2);
+        assert!(compiler.db.name_to_id.contains_key("User"));
+        assert!(compiler.db.name_to_id.contains_key("x"));
+    }
+}

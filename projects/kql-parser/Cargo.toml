@@ -1,11 +1,16 @@
 [package]
 name = "kql-parser"
-version = "0.0.0"
-authors = ["Aster <192607617@qq.com>"]
-edition = "2021"
-license = "MPL-2.0"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
 description = "Hand-written Pratt Parser for KQL"
 
 [dependencies]
-kql-types = { path = "../kql-types" }
-kql-ast = { path = "../kql-ast" }
+kql-types = { workspace = true }
+kql-ast = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde", "kql-types/serde", "kql-ast/serde"]

@@ -26,6 +26,10 @@ impl<'a> Parser<'a> {
         parser
     }
 
+    pub fn is_eof(&self) -> bool {
+        self.curr.kind == TokenKind::EOF
+    }
+
     fn advance(&mut self) {
         let next = self.next_real_token();
         self.prev = std::mem::replace(&mut self.curr, std::mem::replace(&mut self.peek, next));
@@ -47,10 +51,10 @@ impl<'a> Parser<'a> {
             self.advance();
             Ok(token)
         } else {
-            Err(KqlError::ParseError {
-                span: self.curr.span.clone(),
-                message: format!("Expected {:?}, found {:?}", kind, self.curr.kind),
-            })
+            Err(KqlError::parse(
+                self.curr.span.clone(),
+                format!("Expected {:?}, found {:?}", kind, self.curr.kind),
+            ))
         }
     }
 
@@ -70,10 +74,10 @@ impl<'a> Parser<'a> {
             TokenKind::Struct => self.parse_struct_declaration().map(Decl::Struct),
             TokenKind::Enum => self.parse_enum_declaration().map(Decl::Enum),
             TokenKind::Let => self.parse_let_declaration().map(Decl::Let),
-            _ => Err(KqlError::ParseError {
-                span: self.curr.span.clone(),
-                message: format!("Expected declaration (struct, enum, let), found {:?}", self.curr.kind),
-            }),
+            _ => Err(KqlError::parse(
+                self.curr.span.clone(),
+                format!("Expected declaration (struct, enum, let), found {:?}", self.curr.kind),
+            )),
         }
     }
 
@@ -193,10 +197,10 @@ impl<'a> Parser<'a> {
                     span: Span { start: start_span.start, end: end_span.end },
                 })
             }
-            _ => return Err(KqlError::ParseError {
-                span: token.span,
-                message: format!("Expected type, found {:?}", token.kind),
-            }),
+            _ => return Err(KqlError::parse(
+                token.span,
+                format!("Expected type, found {:?}", token.kind),
+            )),
         };
 
         // Handle Optional (T?)
@@ -286,10 +290,10 @@ impl<'a> Parser<'a> {
                 self.expect(TokenKind::RParen)?;
                 Ok(expr)
             }
-            _ => Err(KqlError::ParseError {
-                span: token.span,
-                message: format!("Unexpected token in prefix position: {:?}", token.kind),
-            }),
+            _ => Err(KqlError::parse(
+                token.span,
+                format!("Unexpected token in prefix position: {:?}", token.kind),
+            )),
         }
     }
 

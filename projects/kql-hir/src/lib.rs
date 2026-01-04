@@ -4,9 +4,11 @@ use std::collections::HashMap;
 pub mod lower;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirId(pub usize);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirType {
     Primitive(PrimitiveType),
     Struct(HirId),
@@ -17,6 +19,7 @@ pub enum HirType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PrimitiveType {
     Int,
     Float,
@@ -26,14 +29,16 @@ pub enum PrimitiveType {
     Uuid,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirExpr {
     pub kind: HirExprKind,
     pub ty: HirType,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirExprKind {
     Literal(HirLiteral),
     Binary {
@@ -52,7 +57,8 @@ pub enum HirExprKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirLiteral {
     Int(i64),
     Float(f64),
@@ -61,6 +67,7 @@ pub enum HirLiteral {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirBinaryOp {
     Add, Sub, Mul, Div, Mod,
     Eq, NotEq, Gt, Lt, GtEq, LtEq,
@@ -68,11 +75,13 @@ pub enum HirBinaryOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirUnaryOp {
     Neg, Not,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirStruct {
     pub id: HirId,
     pub name: String,
@@ -81,6 +90,7 @@ pub struct HirStruct {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirField {
     pub name: String,
     pub ty: HirType,
@@ -88,6 +98,7 @@ pub struct HirField {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirEnum {
     pub id: HirId,
     pub name: String,
@@ -96,13 +107,15 @@ pub struct HirEnum {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirVariant {
     pub name: String,
     pub fields: Option<Vec<HirField>>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirLet {
     pub id: HirId,
     pub name: String,
