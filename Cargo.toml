@@ -5,6 +5,7 @@ default-members = [
     "projects/kql-ast",
     "projects/kql-parser",
     "projects/kql-core",
+    "projects/kql-cli",
 ]
 exclude = [
     "projects/.DS_Store",
@@ -23,10 +24,17 @@ kql-ast = { path = "projects/kql-ast" }
 kql-parser = { path = "projects/kql-parser" }
 kql-hir = { path = "projects/kql-hir" }
 kql-core = { path = "projects/kql-core" }
+kql-cli = { path = "projects/kql-cli" }
+kql-wasi = { path = "projects/kql-wasi" }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.4", features = ["derive"] }
+wit-bindgen = "0.17.0"
 itertools = "0.12"
 smallvec = "1.11"
 rowan = "0.15"
+anyhow = "1.0"
+tokio = { version = "1.35", features = ["full"] }
 
 [profile.release]
 lto = true

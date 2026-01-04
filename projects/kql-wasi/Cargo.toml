@@ -1,0 +1,18 @@
+[package]
+name = "kql-wasi"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "WASI component for KQL"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+kql-core = { workspace = true }
+kql-types = { workspace = true }
+wit-bindgen = "0.17.0"
+
+[features]
+default = []

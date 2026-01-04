@@ -1,0 +1,6 @@
+package kql:engine;
+
+world compiler {
+    export check: func(source: string) -> result<_, string>;
+    export compile: func(source: string) -> result<string, string>;
+}

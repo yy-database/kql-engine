@@ -1,0 +1,14 @@
+use clap::Parser;
+use kql_cli::{KqlApplication, KqlCommands};
+
+#[tokio::main]
+async fn main() -> kql_types::Result<()> {
+    let cli = KqlApplication::parse();
+
+    match cli.command {
+        KqlCommands::Check(args) => args.run().await?,
+        KqlCommands::Compile(args) => args.run().await?,
+    }
+
+    Ok(())
+}

@@ -125,7 +125,8 @@ pub struct HirLet {
     pub span: Span,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirDatabase {
     pub structs: HashMap<HirId, HirStruct>,
     pub enums: HashMap<HirId, HirEnum>,
