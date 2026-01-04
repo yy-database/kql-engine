@@ -17,47 +17,96 @@ impl Lowerer {
     }
 
     pub fn lower_decls(&mut self, decls: Vec<ast::Decl>) -> Result<()> {
+        self.lower_decls_recursive(decls, None)
+    }
+
+    fn lower_decls_recursive(&mut self, decls: Vec<ast::Decl>, schema: Option<String>) -> Result<()> {
         // First pass: Collect all names to allow forward references
         for decl in &decls {
-            let (name, kind) = match decl {
-                ast::Decl::Struct(s) => (&s.name.name, HirKind::Struct),
-                ast::Decl::Enum(e) => (&e.name.name, HirKind::Enum),
-                ast::Decl::Let(l) => (&l.name.name, HirKind::Let),
-            };
-            let id = self.db.alloc_id();
-            self.db.name_to_id.insert(name.clone(), id);
-            self.db.id_to_kind.insert(id, kind);
+            match decl {
+                ast::Decl::Struct(s) => {
+                    let full_name = if let Some(schema_name) = &schema {
+                        format!("{}::{}", schema_name, s.name.name)
+                    } else {
+                        s.name.name.clone()
+                    };
+                    let id = self.db.alloc_id();
+                    self.db.name_to_id.insert(full_name, id);
+                    self.db.id_to_kind.insert(id, HirKind::Struct);
+                }
+                ast::Decl::Enum(e) => {
+                    let full_name = if let Some(schema_name) = &schema {
+                        format!("{}::{}", schema_name, e.name.name)
+                    } else {
+                        e.name.name.clone()
+                    };
+                    let id = self.db.alloc_id();
+                    self.db.name_to_id.insert(full_name, id);
+                    self.db.id_to_kind.insert(id, HirKind::Enum);
+                }
+                ast::Decl::Let(l) => {
+                    let full_name = if let Some(schema_name) = &schema {
+                        format!("{}::{}", schema_name, l.name.name)
+                    } else {
+                        l.name.name.clone()
+                    };
+                    let id = self.db.alloc_id();
+                    self.db.name_to_id.insert(full_name, id);
+                    self.db.id_to_kind.insert(id, HirKind::Let);
+                }
+                ast::Decl::Schema(s) => {
+                    self.lower_decls_recursive(s.decls.clone(), Some(s.name.name.clone()))?;
+                }
+            }
         }
 
         // Second pass: Lower actual content
         for decl in decls {
             match decl {
                 ast::Decl::Struct(s) => {
-                    let hir_s = self.lower_struct(s)?;
+                    let full_name = if let Some(schema_name) = &schema {
+                        format!("{}::{}", schema_name, s.name.name)
+                    } else {
+                        s.name.name.clone()
+                    };
+                    let hir_s = self.lower_struct(s, schema.clone(), &full_name)?;
                     self.db.structs.insert(hir_s.id, hir_s);
                 }
                 ast::Decl::Enum(e) => {
-                    let hir_e = self.lower_enum(e)?;
+                    let full_name = if let Some(schema_name) = &schema {
+                        format!("{}::{}", schema_name, e.name.name)
+                    } else {
+                        e.name.name.clone()
+                    };
+                    let hir_e = self.lower_enum(e, schema.clone(), &full_name)?;
                     self.db.enums.insert(hir_e.id, hir_e);
                 }
                 ast::Decl::Let(l) => {
-                    let hir_l = self.lower_let(l)?;
+                    let full_name = if let Some(schema_name) = &schema {
+                        format!("{}::{}", schema_name, l.name.name)
+                    } else {
+                        l.name.name.clone()
+                    };
+                    let hir_l = self.lower_let(l, schema.clone(), &full_name)?;
                     self.db.lets.insert(hir_l.id, hir_l);
+                }
+                ast::Decl::Schema(s) => {
+                    self.lower_decls_recursive(s.decls.clone(), Some(s.name.name.clone()))?;
                 }
             }
         }
         Ok(())
     }
 
-    fn lower_struct(&mut self, s: ast::StructDecl) -> Result<HirStruct> {
-        let id = *self.db.name_to_id.get(&s.name.name).unwrap();
+    fn lower_struct(&mut self, s: ast::StructDecl, schema: Option<String>, full_name: &str) -> Result<HirStruct> {
+        let id = *self.db.name_to_id.get(full_name).unwrap();
         let attrs = self.lower_attrs(s.attrs)?;
         let mut fields = Vec::new();
         for f in s.fields {
             fields.push(HirField {
                 attrs: self.lower_attrs(f.attrs)?,
                 name: f.name.name,
-                ty: self.lower_type(f.ty)?,
+                ty: self.lower_type(f.ty, schema.as_deref())?,
                 span: f.span,
             });
         }
@@ -65,13 +114,14 @@ impl Lowerer {
             id,
             attrs,
             name: s.name.name,
+            schema,
             fields,
             span: s.span,
         })
     }
 
-    fn lower_enum(&mut self, e: ast::EnumDecl) -> Result<HirEnum> {
-        let id = *self.db.name_to_id.get(&e.name.name).unwrap();
+    fn lower_enum(&mut self, e: ast::EnumDecl, schema: Option<String>, full_name: &str) -> Result<HirEnum> {
+        let id = *self.db.name_to_id.get(full_name).unwrap();
         let attrs = self.lower_attrs(e.attrs)?;
         let mut variants = Vec::new();
         for v in e.variants {
@@ -81,7 +131,7 @@ impl Lowerer {
                     hir_f_vec.push(HirField {
                         attrs: self.lower_attrs(f.attrs)?,
                         name: f.name.name,
-                        ty: self.lower_type(f.ty)?,
+                        ty: self.lower_type(f.ty, schema.as_deref())?,
                         span: f.span,
                     });
                 }
@@ -100,17 +150,18 @@ impl Lowerer {
             id,
             attrs,
             name: e.name.name,
+            schema,
             variants,
             span: e.span,
         })
     }
 
-    fn lower_let(&mut self, l: ast::LetDecl) -> Result<HirLet> {
-        let id = *self.db.name_to_id.get(&l.name.name).unwrap();
+    fn lower_let(&mut self, l: ast::LetDecl, _schema: Option<String>, full_name: &str) -> Result<HirLet> {
+        let id = *self.db.name_to_id.get(full_name).unwrap();
         let attrs = self.lower_attrs(l.attrs)?;
         let value = self.lower_expr(l.value)?;
         let ty = if let Some(ast_ty) = l.ty {
-            self.lower_type(ast_ty)?
+            self.lower_type(ast_ty, _schema.as_deref())?
         } else {
             value.ty.clone()
         };
@@ -157,21 +208,21 @@ impl Lowerer {
         Ok(hir_attrs)
     }
 
-    fn lower_type(&mut self, ty: ast::Type) -> Result<HirType> {
+    fn lower_type(&mut self, ty: ast::Type, current_schema: Option<&str>) -> Result<HirType> {
         match ty {
             ast::Type::Named(n) => {
                 // Special handling for Key<T>
                 if n.name == "Key" {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
-                            let inner = self.lower_type(args[0].clone())?;
+                            let inner = self.lower_type(args[0].clone(), current_schema)?;
                             return Ok(HirType::Key {
                                 entity: None,
                                 inner: Box::new(inner),
                             });
                         } else if args.len() == 2 {
-                            let entity_ty = self.lower_type(args[0].clone())?;
-                            let inner = self.lower_type(args[1].clone())?;
+                            let entity_ty = self.lower_type(args[0].clone(), current_schema)?;
+                            let inner = self.lower_type(args[1].clone(), current_schema)?;
                             let entity = if let HirType::Struct(id) = entity_ty {
                                 Some(id)
                             } else {
@@ -193,7 +244,7 @@ impl Lowerer {
                 if n.name == "List" {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
-                            let inner = self.lower_type(args[0].clone())?;
+                            let inner = self.lower_type(args[0].clone(), current_schema)?;
                             return Ok(HirType::List(Box::new(inner)));
                         }
                     }
@@ -207,7 +258,7 @@ impl Lowerer {
                 if n.name == "Option" {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
-                            let inner = self.lower_type(args[0].clone())?;
+                            let inner = self.lower_type(args[0].clone(), current_schema)?;
                             return Ok(HirType::Optional(Box::new(inner)));
                         }
                     }
@@ -228,7 +279,16 @@ impl Lowerer {
                     "UUID" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
                     "d128" => Ok(HirType::Primitive(PrimitiveType::D128)),
                     _ => {
-                        if let Some(&id) = self.db.name_to_id.get(&n.name) {
+                        let id = if let Some(&id) = self.db.name_to_id.get(&n.name) {
+                            Some(id)
+                        } else if let Some(schema) = current_schema {
+                            let qualified = format!("{}::{}", schema, n.name);
+                            self.db.name_to_id.get(&qualified).copied()
+                        } else {
+                            None
+                        };
+
+                        if let Some(id) = id {
                             match self.db.id_to_kind.get(&id) {
                                 Some(HirKind::Struct) => Ok(HirType::Struct(id)),
                                 Some(HirKind::Enum) => Ok(HirType::Enum(id)),
@@ -244,11 +304,11 @@ impl Lowerer {
                 }
             }
             ast::Type::List(l) => {
-                let inner = self.lower_type(*l.inner)?;
+                let inner = self.lower_type(*l.inner, current_schema)?;
                 Ok(HirType::List(Box::new(inner)))
             }
             ast::Type::Optional(o) => {
-                let inner = self.lower_type(*o.inner)?;
+                let inner = self.lower_type(*o.inner, current_schema)?;
                 Ok(HirType::Optional(Box::new(inner)))
             }
         }

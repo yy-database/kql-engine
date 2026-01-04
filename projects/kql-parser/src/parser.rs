@@ -90,9 +90,11 @@ impl<'a> Parser<'a> {
                 let mut arg_vec = Vec::new();
                 while self.curr.kind != TokenKind::RParen && self.curr.kind != TokenKind::EOF {
                     let mut arg_name = None;
-                    // Check if it's a named argument (ident :)
-                    if self.curr.kind == TokenKind::Ident && self.peek.kind == TokenKind::Colon {
-                        arg_name = Some(self.parse_ident()?);
+                    // Check if it's a named argument (ident : or keyword :)
+                    if (self.curr.kind == TokenKind::Ident || self.is_keyword(&self.curr.kind)) && self.peek.kind == TokenKind::Colon {
+                        let token = self.curr.clone();
+                        self.advance();
+                        arg_name = Some(Ident { name: token.text, span: token.span });
                         self.expect(TokenKind::Colon)?;
                     }
 
@@ -125,9 +127,15 @@ impl<'a> Parser<'a> {
             TokenKind::Struct => self.parse_struct_declaration(attrs).map(Decl::Struct),
             TokenKind::Enum => self.parse_enum_declaration(attrs).map(Decl::Enum),
             TokenKind::Let => self.parse_let_declaration(attrs).map(Decl::Let),
+            TokenKind::Schema => {
+                if !attrs.is_empty() {
+                    return Err(KqlError::parse(attrs[0].span.clone(), "Attributes are not supported on schema declarations".to_string()));
+                }
+                self.parse_schema_declaration().map(Decl::Schema)
+            }
             _ => Err(KqlError::parse(
                 self.curr.span.clone(),
-                format!("Expected declaration (struct, enum, let), found {:?}", self.curr.kind),
+                format!("Expected declaration (struct, enum, let, schema), found {:?}", self.curr.kind),
             )),
         }
     }
@@ -225,6 +233,27 @@ impl<'a> Parser<'a> {
             end: end_span,
         };
         Ok(LetDecl { attrs, name, ty, value, span })
+    }
+
+    fn parse_schema_declaration(&mut self) -> Result<SchemaDecl> {
+        let start_span = self.expect(TokenKind::Schema)?.span;
+        let name = self.parse_ident()?;
+        self.expect(TokenKind::LBrace)?;
+
+        let mut decls = Vec::new();
+        while self.curr.kind != TokenKind::RBrace && self.curr.kind != TokenKind::EOF {
+            decls.push(self.parse_declaration()?);
+        }
+
+        let end_span = self.expect(TokenKind::RBrace)?.span;
+        Ok(SchemaDecl {
+            name,
+            decls,
+            span: Span {
+                start: start_span.start,
+                end: end_span.end,
+            },
+        })
     }
 
     // --- Types ---
@@ -425,6 +454,13 @@ impl<'a> Parser<'a> {
 
     fn peek_precedence(&self) -> Precedence {
         get_precedence(&self.peek.kind)
+    }
+
+    fn is_keyword(&self, kind: &TokenKind) -> bool {
+        matches!(
+            kind,
+            TokenKind::Struct | TokenKind::Enum | TokenKind::Let | TokenKind::Schema
+        )
     }
 }
 

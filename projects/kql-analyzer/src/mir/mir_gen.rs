@@ -1,4 +1,6 @@
-use crate::hir::{HirDatabase, HirExprKind, HirLiteral, HirType, PrimitiveType};
+use crate::hir::{
+    HirDatabase, HirExprKind, HirLiteral, HirType, PrimitiveType,
+};
 use crate::mir::*;
 use kql_types::Result;
 
@@ -27,7 +29,7 @@ impl MirLowerer {
 
         for s in self.hir_db.structs.values() {
             let mut table_name = to_snake_case(&s.name);
-            let mut schema = Some("public".to_string());
+            let mut schema = None;
             let mut primary_key = None;
             let mut indexes = Vec::new();
 
@@ -119,7 +121,8 @@ impl MirLowerer {
 
             let mut columns = Vec::new();
             for f in &s.fields {
-                let mut nullable = true;
+                let (column_type, is_optional) = self.lower_type_with_nullability(&f.ty)?;
+                let mut nullable = is_optional;
                 let mut auto_increment = false;
                 let mut default = None;
 
@@ -149,6 +152,9 @@ impl MirLowerer {
                         "not_null" => {
                             nullable = false;
                         }
+                        "nullable" => {
+                            nullable = true;
+                        }
                         "default" => {
                             if let Some(arg) = attr.args.get(0) {
                                 if let HirExprKind::Literal(lit) = &arg.value.kind {
@@ -167,7 +173,7 @@ impl MirLowerer {
 
                 columns.push(Column {
                     name: f.name.clone(),
-                    ty: self.lower_type(&f.ty)?,
+                    ty: column_type,
                     nullable,
                     auto_increment,
                     default,
@@ -189,6 +195,19 @@ impl MirLowerer {
         Ok(mir_db)
     }
 
+    fn lower_type_with_nullability(&self, ty: &HirType) -> Result<(ColumnType, bool)> {
+        match ty {
+            HirType::Optional(inner) => {
+                let (ty, _) = self.lower_type_with_nullability(inner)?;
+                Ok((ty, true))
+            }
+            _ => {
+                let ty = self.lower_type(ty)?;
+                Ok((ty, false))
+            }
+        }
+    }
+
     fn lower_type(&self, ty: &HirType) -> Result<ColumnType> {
         match ty {
             HirType::Primitive(p) => match p {
@@ -205,9 +224,9 @@ impl MirLowerer {
             HirType::Struct(_) => Ok(ColumnType::Json),
             HirType::Enum(_) => Ok(ColumnType::I32),
             HirType::List(_) => Ok(ColumnType::Json),
-            HirType::Key { inner, .. } => self.lower_type(inner),
             HirType::Optional(inner) => self.lower_type(inner),
-            _ => Ok(ColumnType::String(None)),
+            HirType::Key { inner, .. } => self.lower_type(inner),
+            HirType::Unknown => Ok(ColumnType::Json),
         }
     }
 }

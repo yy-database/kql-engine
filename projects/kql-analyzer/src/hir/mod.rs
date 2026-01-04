@@ -1,5 +1,5 @@
 use kql_types::Span;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub mod lower;
 
@@ -110,6 +110,7 @@ pub struct HirStruct {
     pub id: HirId,
     pub attrs: Vec<HirAttribute>,
     pub name: String,
+    pub schema: Option<String>,
     pub fields: Vec<HirField>,
     pub span: Span,
 }
@@ -129,6 +130,7 @@ pub struct HirEnum {
     pub id: HirId,
     pub attrs: Vec<HirAttribute>,
     pub name: String,
+    pub schema: Option<String>,
     pub variants: Vec<HirVariant>,
     pub span: Span,
 }
@@ -156,11 +158,11 @@ pub struct HirLet {
 #[derive(Debug, Default, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirDatabase {
-    pub structs: HashMap<HirId, HirStruct>,
-    pub enums: HashMap<HirId, HirEnum>,
-    pub lets: HashMap<HirId, HirLet>,
-    pub name_to_id: HashMap<String, HirId>,
-    pub id_to_kind: HashMap<HirId, HirKind>,
+    pub structs: IndexMap<HirId, HirStruct>,
+    pub enums: IndexMap<HirId, HirEnum>,
+    pub lets: IndexMap<HirId, HirLet>,
+    pub name_to_id: IndexMap<String, HirId>,
+    pub id_to_kind: IndexMap<HirId, HirKind>,
     next_id: usize,
 }
 

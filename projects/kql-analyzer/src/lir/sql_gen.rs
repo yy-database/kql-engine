@@ -27,7 +27,7 @@ impl SqlGenerator {
     pub fn generate_ddl_sql(&self) -> Vec<String> {
         self.generate_ddl()
             .into_iter()
-            .map(|stmt| stmt.to_string())
+            .map(|stmt| format!("{};", stmt))
             .collect()
     }
 
@@ -49,7 +49,10 @@ impl SqlGenerator {
 
         let mut name_parts = Vec::new();
         if let Some(schema) = &table.schema {
-            name_parts.push(Ident::new(schema));
+            // For MySQL/SQLite, we usually don't want "public." prefix
+            if !(self.dialect == SqlDialect::MySql || self.dialect == SqlDialect::Sqlite) || schema != "public" {
+                name_parts.push(Ident::new(schema));
+            }
         }
         name_parts.push(Ident::new(&table.name));
 

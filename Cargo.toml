@@ -33,6 +33,7 @@ clap = { version = "4.4", features = ["derive", "env"] }
 wit-bindgen = "0.17.0"
 itertools = "0.12"
 smallvec = "1.11"
+indexmap = { version = "2.2", features = ["serde"] }
 rowan = "0.15"
 anyhow = "1.0"
 tokio = { version = "1.35", features = ["full"] }

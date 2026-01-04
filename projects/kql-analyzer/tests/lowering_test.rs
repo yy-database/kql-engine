@@ -32,7 +32,7 @@ fn test_full_lowering_pipeline() {
     let mir_db = mir_lowerer.lower().unwrap();
 
     let user_table = mir_db.tables.get("User").unwrap();
-    assert_eq!(user_table.name, "User");
+    assert_eq!(user_table.name, "user");
     assert_eq!(user_table.columns.len(), 3);
     assert!(user_table.columns[0].auto_increment);
     assert!(user_table.columns[2].nullable);
@@ -43,7 +43,7 @@ fn test_full_lowering_pipeline() {
     
     assert_eq!(statements.len(), 1);
     let sql = statements[0].to_string();
-    assert!(sql.contains("CREATE TABLE IF NOT EXISTS User"));
+    assert!(sql.contains("CREATE TABLE IF NOT EXISTS user"));
     assert!(sql.contains("id INT"));
     assert!(sql.contains("name VARCHAR"));
 }

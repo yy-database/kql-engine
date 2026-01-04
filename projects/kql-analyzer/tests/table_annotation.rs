@@ -29,12 +29,12 @@ fn test_table_annotation() {
 
     let user_table = mir_db.tables.get("User").expect("Table 'User' not found in MIR");
     assert_eq!(user_table.name, "users");
-    assert_eq!(user_table.schema, Some("public".to_string()));
+    assert_eq!(user_table.schema, None);
 
     let sql_gen = SqlGenerator::new(mir_db, SqlDialect::Postgres);
     let statements = sql_gen.generate_ddl();
     let sql = statements[0].to_string();
-    assert!(sql.contains("CREATE TABLE IF NOT EXISTS public.users"));
+    assert!(sql.contains("CREATE TABLE IF NOT EXISTS users"));
 }
 
 #[test]

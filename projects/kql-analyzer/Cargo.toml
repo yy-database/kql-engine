@@ -9,6 +9,7 @@ description = "Analyzer for KQL, including HIR, MIR and LIR"
 [dependencies]
 kql-types = { workspace = true }
 kql-ast = { workspace = true }
+indexmap = { workspace = true }
 serde = { workspace = true, optional = true }
 sqlparser = "0.43"
 

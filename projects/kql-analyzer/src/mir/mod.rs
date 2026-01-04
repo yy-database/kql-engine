@@ -1,16 +1,16 @@
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub mod mir_gen;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MirDatabase {
-    pub tables: HashMap<String, Table>,
+    pub tables: IndexMap<String, Table>,
 }
 
 impl Default for MirDatabase {
     fn default() -> Self {
         Self {
-            tables: HashMap::new(),
+            tables: IndexMap::new(),
         }
     }
 }

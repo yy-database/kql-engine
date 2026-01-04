@@ -1,6 +1,7 @@
 use sqlparser::ast::{ColumnDef, DataType, Statement, TableConstraint};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
+use indexmap::IndexMap;
 
 pub struct Transpiler;
 
@@ -9,20 +10,53 @@ impl Transpiler {
         let dialect = GenericDialect {};
         let ast = Parser::parse_sql(&dialect, sql).map_err(|e| e.to_string())?;
 
-        let mut kql = String::new();
+        let mut schemas: IndexMap<Option<String>, Vec<Statement>> = IndexMap::new();
+
         for statement in ast {
-            if let Statement::CreateTable { name, columns, constraints, .. } = statement {
-                let table_name = name.to_string();
-                let struct_name = to_pascal_case(&table_name);
-                
-                kql.push_str(&format!("@table(\"{}\")\n", table_name));
-                kql.push_str(&format!("struct {} {{\n", struct_name));
-                for col in columns {
-                    let col_kql = transpile_column(&col, &table_name, &constraints);
-                    kql.push_str(&format!("    {},\n", col_kql));
-                }
-                kql.push_str("}\n\n");
+            if let Statement::CreateTable { name, .. } = &statement {
+                let schema = if name.0.len() > 1 {
+                    Some(name.0[0].value.clone())
+                } else {
+                    None
+                };
+                schemas.entry(schema).or_default().push(statement);
             }
+        }
+
+        let mut kql = String::new();
+        for (schema_name, statements) in schemas {
+            let mut current_kql = String::new();
+            if let Some(s) = &schema_name {
+                current_kql.push_str(&format!("schema {} {{\n", to_pascal_case(s)));
+            }
+
+            for statement in statements {
+                if let Statement::CreateTable { name, columns, constraints, .. } = statement {
+                    let table_name = name.0.last().unwrap().value.clone();
+                    let struct_name = to_pascal_case(&table_name);
+                    
+                    let table_attr = if let Some(s) = &schema_name {
+                        format!("@table(schema: \"{}\", \"{}\")\n", s, table_name)
+                    } else {
+                        format!("@table(\"{}\")\n", table_name)
+                    };
+                    
+                    let indent = if schema_name.is_some() { "    " } else { "" };
+                    current_kql.push_str(&format!("{}{}", indent, table_attr));
+                    current_kql.push_str(&format!("{}struct {} {{\n", indent, struct_name));
+                    for col in columns {
+                        let col_kql = transpile_column(&col, &table_name, &constraints);
+                        current_kql.push_str(&format!("{}    {},\n", indent, col_kql));
+                    }
+                    current_kql.push_str(&format!("{}}}\n\n", indent));
+                }
+            }
+
+            if schema_name.is_some() {
+                current_kql = current_kql.trim_end().to_string();
+                current_kql.push_str("\n}\n\n");
+            }
+            kql.push_str(&current_kql);
         }
 
         Ok(kql.trim().to_string())
@@ -124,6 +158,16 @@ mod tests {
         assert_eq!(
             kql,
             "@table(\"users\")\nstruct User {\n    id: Key<i32>,\n    name: String,\n    age: i32?,\n}"
+        );
+    }
+
+    #[test]
+    fn test_transpile_schema() {
+        let sql = "CREATE TABLE pg_catalog.pg_proc (id INT PRIMARY KEY, name TEXT)";
+        let kql = Transpiler::transpile(sql).unwrap();
+        assert_eq!(
+            kql,
+            "schema PgCatalog {\n    @table(schema: \"pg_catalog\", \"pg_proc\")\n    struct PgProc {\n        id: Key<i32>,\n        name: String?,\n    }\n}"
         );
     }
 }
