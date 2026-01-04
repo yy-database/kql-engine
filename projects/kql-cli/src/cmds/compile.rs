@@ -1,8 +1,8 @@
 use clap::Args;
 use kql_core::Compiler;
-use kql_types::KqlError;
 use std::path::PathBuf;
 use tokio::fs;
+use kql_types::Result;
 
 #[derive(Args)]
 pub struct CompileArgs {
@@ -14,13 +14,13 @@ pub struct CompileArgs {
 }
 
 impl CompileArgs {
-    pub async fn run(&self) -> Result<(), KqlError> {
-        let source = fs::read_to_string(&self.file).await.map_err(|e| KqlError::internal(e.to_string()))?;
+    pub async fn run(&self) -> Result<()> {
+        let source = fs::read_to_string(&self.file).await?;
         let mut compiler = Compiler::new();
         compiler.compile(&source)?;
 
         if self.json {
-            let json_output = serde_json::to_string_pretty(&compiler.db).map_err(|e| KqlError::internal(e.to_string()))?;
+            let json_output = serde_json::to_string_pretty(&compiler.db)?;
             println!("{}", json_output);
         } else {
             println!("Compilation successful!");

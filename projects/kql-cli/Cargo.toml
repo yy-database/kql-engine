@@ -8,7 +8,11 @@ description = "CLI tool for KQL"
 
 [dependencies]
 kql-core = { workspace = true, features = ["serde"] }
-kql-types = { workspace = true, features = ["serde"] }
+kql-types = { workspace = true, features = ["serde", "sqlx"] }
+kql-parser = { workspace = true }
+kql-analyzer = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
 tokio = { workspace = true }
+sqlx = { workspace = true }
 serde_json = "1.0"
+

@@ -26,6 +26,15 @@ impl Display for KqlErrorKind {
             KqlErrorKind::SemanticError { span, message } => {
                 write!(f, "Semantic error at {:?}: {}", span, message)
             }
+            KqlErrorKind::IoError { message } => {
+                write!(f, "IO error: {}", message)
+            }
+            KqlErrorKind::DatabaseError { message } => {
+                write!(f, "Database error: {}", message)
+            }
+            KqlErrorKind::CliError { message } => {
+                write!(f, "CLI error: {}", message)
+            }
             KqlErrorKind::InternalError { message } => {
                 write!(f, "Internal error: {}", message)
             }

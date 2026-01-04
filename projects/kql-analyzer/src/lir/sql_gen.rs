@@ -1,7 +1,9 @@
 use crate::mir::{Column, ColumnType, MirDatabase, Table};
 use sqlparser::ast::{
-    CharacterLength, ColumnDef, DataType, Ident, ObjectName, Statement, TableConstraint,
+    CharacterLength, ColumnDef, ColumnOption, ColumnOptionDef, DataType, Ident, ObjectName,
+    Statement, TableConstraint,
 };
+use sqlparser::tokenizer::Token;
 
 pub struct SqlGenerator {
     pub mir_db: MirDatabase,
@@ -18,6 +20,13 @@ impl SqlGenerator {
             statements.push(self.generate_create_table(table));
         }
         statements
+    }
+
+    pub fn generate_ddl_sql(&self) -> Vec<String> {
+        self.generate_ddl()
+            .into_iter()
+            .map(|stmt| stmt.to_string())
+            .collect()
     }
 
     fn generate_create_table(&self, table: &Table) -> Statement {
@@ -87,11 +96,39 @@ impl SqlGenerator {
             ColumnType::Json => DataType::JSON,
         };
 
+        let mut options = Vec::new();
+
+        if !col.nullable {
+            options.push(ColumnOptionDef {
+                name: None,
+                option: ColumnOption::NotNull,
+            });
+        }
+
+        if col.auto_increment {
+            // Note: Different dialects handle auto increment differently.
+            // For now we use a generic DialectPostgres/MySql might need specific handling.
+            options.push(ColumnOptionDef {
+                name: None,
+                option: ColumnOption::DialectSpecific(vec![Token::make_keyword("AUTO_INCREMENT")]),
+            });
+        }
+
+        if let Some(default_val) = &col.default {
+            // Simple default value handling
+            options.push(ColumnOptionDef {
+                name: None,
+                option: ColumnOption::Default(sqlparser::ast::Expr::Value(
+                    sqlparser::ast::Value::SingleQuotedString(default_val.clone()),
+                )),
+            });
+        }
+
         ColumnDef {
             name: Ident::new(&col.name),
             data_type,
             collation: None,
-            options: vec![], // TODO: Handle NOT NULL, AUTO_INCREMENT, DEFAULT
+            options,
         }
     }
 }

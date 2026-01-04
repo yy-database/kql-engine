@@ -237,3 +237,10 @@ pub struct OptionalType {
     pub inner: Box<Type>,
     pub span: Span,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Database {
+    pub decls: Vec<Decl>,
+    pub span: Span,
+}

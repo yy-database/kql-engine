@@ -8,6 +8,7 @@ async fn main() -> kql_types::Result<()> {
     match cli.command {
         KqlCommands::Check(args) => args.run().await?,
         KqlCommands::Compile(args) => args.run().await?,
+        KqlCommands::Migrate(args) => args.run().await?,
     }
 
     Ok(())

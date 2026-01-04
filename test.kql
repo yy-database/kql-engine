@@ -1,2 +1,0 @@
-struct User { id: i32, name: String }
-let x: i32 = 10

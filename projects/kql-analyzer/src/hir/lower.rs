@@ -11,6 +11,11 @@ impl Lowerer {
         Self { db: HirDatabase::default() }
     }
 
+    pub fn lower_database(&mut self, ast_db: &ast::Database) -> Result<HirDatabase> {
+        self.lower_decls(ast_db.decls.clone())?;
+        Ok(self.db.clone())
+    }
+
     pub fn lower_decls(&mut self, decls: Vec<ast::Decl>) -> Result<()> {
         // First pass: Collect all names to allow forward references
         for decl in &decls {

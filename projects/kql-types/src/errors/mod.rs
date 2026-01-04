@@ -38,6 +38,18 @@ impl KqlError {
         Self::new(KqlErrorKind::SemanticError { span, message: message.into() })
     }
 
+    pub fn io(message: impl Into<String>) -> Self {
+        Self::new(KqlErrorKind::IoError { message: message.into() })
+    }
+
+    pub fn database(message: impl Into<String>) -> Self {
+        Self::new(KqlErrorKind::DatabaseError { message: message.into() })
+    }
+
+    pub fn cli(message: impl Into<String>) -> Self {
+        Self::new(KqlErrorKind::CliError { message: message.into() })
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new(KqlErrorKind::InternalError { message: message.into() })
     }
@@ -50,5 +62,8 @@ pub enum KqlErrorKind {
     LexicalError { span: Span, message: String },
     ParseError { span: Span, message: String },
     SemanticError { span: Span, message: String },
+    IoError { message: String },
+    DatabaseError { message: String },
+    CliError { message: String },
     InternalError { message: String },
 }

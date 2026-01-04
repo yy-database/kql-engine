@@ -63,6 +63,22 @@ impl<'a> Parser<'a> {
 
     // --- Declarations ---
 
+    pub fn parse(&mut self) -> Result<Database> {
+        let mut decls = Vec::new();
+        let start_pos = self.curr.span.start;
+        while !self.is_eof() {
+            decls.push(self.parse_declaration()?);
+        }
+        let end_pos = self.prev.span.end;
+        Ok(Database {
+            decls,
+            span: Span {
+                start: start_pos,
+                end: end_pos,
+            },
+        })
+    }
+
     fn parse_attributes(&mut self) -> Result<Vec<Attribute>> {
         let mut attrs = Vec::new();
         while self.curr.kind == TokenKind::At {

@@ -1,8 +1,8 @@
 use clap::Args;
 use kql_core::Compiler;
-use kql_types::KqlError;
 use std::path::PathBuf;
 use tokio::fs;
+use kql_types::Result;
 
 #[derive(Args)]
 pub struct CheckArgs {
@@ -11,8 +11,8 @@ pub struct CheckArgs {
 }
 
 impl CheckArgs {
-    pub async fn run(&self) -> Result<(), KqlError> {
-        let source = fs::read_to_string(&self.file).await.map_err(|e| KqlError::internal(e.to_string()))?;
+    pub async fn run(&self) -> Result<()> {
+        let source = fs::read_to_string(&self.file).await?;
         let mut compiler = Compiler::new();
         compiler.compile(&source)?;
         println!("Check successful!");
