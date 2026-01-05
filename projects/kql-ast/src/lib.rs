@@ -152,6 +152,7 @@ pub enum Decl {
     Enum(EnumDecl),
     Let(LetDecl),
     Namespace(NamespaceDecl),
+    TypeAlias(TypeAliasDecl),
 }
 
 impl AstNode for Decl {
@@ -161,8 +162,18 @@ impl AstNode for Decl {
             Decl::Enum(d) => d.span,
             Decl::Let(d) => d.span,
             Decl::Namespace(d) => d.span,
+            Decl::TypeAlias(d) => d.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TypeAliasDecl {
+    pub attrs: Vec<Attribute>,
+    pub name: Ident,
+    pub ty: Type,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

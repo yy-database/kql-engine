@@ -37,14 +37,21 @@ pub enum HirType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PrimitiveType {
+    I8,
+    I16,
     I32,
     I64,
+    U8,
+    U16,
+    U32,
+    U64,
     F32,
     F64,
     String,
     Bool,
     DateTime,
     Uuid,
+    D64,
     D128,
 }
 
@@ -127,8 +134,16 @@ pub struct HirStruct {
     pub name: String,
     pub namespace: Option<String>,
     pub schema: Option<String>,
+    pub layout: Option<StructLayout>,
     pub fields: Vec<HirField>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum StructLayout {
+    Table,
+    Json,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -154,6 +169,7 @@ pub struct HirEnum {
     pub name: String,
     pub namespace: Option<String>,
     pub schema: Option<String>,
+    pub layout: Option<HirType>,
     pub variants: Vec<HirVariant>,
     pub span: Span,
 }
@@ -179,12 +195,24 @@ pub struct HirLet {
     pub span: Span,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirTypeAlias {
+    pub id: HirId,
+    pub attrs: Vec<HirAttribute>,
+    pub name: String,
+    pub namespace: Option<String>,
+    pub ty: HirType,
+    pub span: Span,
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirProgram {
     pub structs: IndexMap<HirId, HirStruct>,
     pub enums: IndexMap<HirId, HirEnum>,
     pub lets: IndexMap<HirId, HirLet>,
+    pub type_aliases: IndexMap<HirId, HirTypeAlias>,
     pub name_to_id: IndexMap<String, HirId>,
     pub id_to_kind: IndexMap<HirId, HirKind>,
     next_id: usize,
@@ -196,6 +224,7 @@ pub enum HirKind {
     Struct,
     Enum,
     Let,
+    TypeAlias,
 }
 
 impl HirProgram {

@@ -6,11 +6,19 @@ pub struct Lowerer {
     pub db: HirProgram,
     pub errors: Vec<KqlError>,
     pub current_struct_id: Option<HirId>,
+    pub resolving_aliases: Vec<HirId>,
+    pub ast_decls: std::collections::HashMap<HirId, ast::Decl>,
 }
 
 impl Lowerer {
     pub fn new() -> Self {
-        Self { db: HirProgram::default(), errors: Vec::new(), current_struct_id: None }
+        Self { 
+            db: HirProgram::default(), 
+            errors: Vec::new(), 
+            current_struct_id: None,
+            resolving_aliases: Vec::new(),
+            ast_decls: std::collections::HashMap::new(),
+        }
     }
 
     pub fn lower_program(&mut self, ast_db: &ast::Database) -> Result<HirProgram> {
@@ -39,6 +47,7 @@ impl Lowerer {
                     let id = self.db.alloc_id();
                     self.db.name_to_id.insert(full_name, id);
                     self.db.id_to_kind.insert(id, HirKind::Struct);
+                    self.ast_decls.insert(id, ast::Decl::Struct(s.clone()));
                 }
                 ast::Decl::Enum(e) => {
                     let full_name = if let Some(ns) = &namespace {
@@ -49,6 +58,7 @@ impl Lowerer {
                     let id = self.db.alloc_id();
                     self.db.name_to_id.insert(full_name, id);
                     self.db.id_to_kind.insert(id, HirKind::Enum);
+                    self.ast_decls.insert(id, ast::Decl::Enum(e.clone()));
                 }
                 ast::Decl::Let(l) => {
                     let full_name = if let Some(ns) = &namespace {
@@ -59,6 +69,18 @@ impl Lowerer {
                     let id = self.db.alloc_id();
                     self.db.name_to_id.insert(full_name, id);
                     self.db.id_to_kind.insert(id, HirKind::Let);
+                    self.ast_decls.insert(id, ast::Decl::Let(l.clone()));
+                }
+                ast::Decl::TypeAlias(t) => {
+                    let full_name = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, t.name.name)
+                    } else {
+                        t.name.name.clone()
+                    };
+                    let id = self.db.alloc_id();
+                    self.db.name_to_id.insert(full_name, id);
+                    self.db.id_to_kind.insert(id, HirKind::TypeAlias);
+                    self.ast_decls.insert(id, ast::Decl::TypeAlias(t.clone()));
                 }
                 ast::Decl::Namespace(d) => {
                     if !d.is_block {
@@ -146,6 +168,17 @@ impl Lowerer {
                         Err(e) => self.errors.push(e),
                     }
                 }
+                ast::Decl::TypeAlias(t) => {
+                    let full_name = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, t.name.name)
+                    } else {
+                        t.name.name.clone()
+                    };
+                    match self.lower_type_alias(t, namespace.clone(), &full_name) {
+                        Ok(hir_t) => { self.db.type_aliases.insert(hir_t.id, hir_t); }
+                        Err(e) => self.errors.push(e),
+                    }
+                }
                 ast::Decl::Namespace(d) => {
                     if !d.is_block {
                         let (new_ns, new_schema) = self.get_ns_and_schema(&d, &namespace, &db_schema);
@@ -169,6 +202,21 @@ impl Lowerer {
             Ok(a) => a,
             Err(e) => { self.errors.push(e); Vec::new() }
         };
+
+        let mut layout = None;
+        for attr in &attrs {
+            if attr.name == "layout" {
+                if !attr.args.is_empty() {
+                    if let HirExprKind::Symbol(s) = &attr.args[0].value.kind {
+                        layout = match s.as_str() {
+                            "json" => Some(StructLayout::Json),
+                            "table" => Some(StructLayout::Table),
+                            _ => None,
+                        };
+                    }
+                }
+            }
+        }
 
         // Check for @schema on struct
         for attr in &attrs {
@@ -284,6 +332,7 @@ impl Lowerer {
             name: s.name.name,
             namespace,
             schema: db_schema,
+            layout,
             fields,
             span: s.span,
         })
@@ -295,6 +344,34 @@ impl Lowerer {
             Ok(a) => a,
             Err(e) => { self.errors.push(e); Vec::new() }
         };
+
+        let mut layout = None;
+        for attr in &attrs {
+            if attr.name == "layout" {
+                if !attr.args.is_empty() {
+                    // Try to parse the first argument as a type
+                    // In KQL, @layout(i32) means the argument is an expression that looks like a type
+                    // But our parser might parse it as a symbol or a type.
+                    // Let's check how @layout(i32) is parsed.
+                    // If it's HirExprKind::Symbol("i32"), we can map it.
+                    if let HirExprKind::Symbol(s) = &attr.args[0].value.kind {
+                        layout = match s.as_str() {
+                            "i8" => Some(HirType::Primitive(PrimitiveType::I8)),
+                            "i16" => Some(HirType::Primitive(PrimitiveType::I16)),
+                            "i32" => Some(HirType::Primitive(PrimitiveType::I32)),
+                            "i64" => Some(HirType::Primitive(PrimitiveType::I64)),
+                            "u8" => Some(HirType::Primitive(PrimitiveType::U8)),
+                            "u16" => Some(HirType::Primitive(PrimitiveType::U16)),
+                            "u32" => Some(HirType::Primitive(PrimitiveType::U32)),
+                            "u64" => Some(HirType::Primitive(PrimitiveType::U64)),
+                            "String" | "string" | "varchar" => Some(HirType::Primitive(PrimitiveType::String)),
+                            _ => None,
+                        };
+                    }
+                }
+            }
+        }
+
         let mut variants = Vec::new();
         for v in e.variants {
             let v_attrs = match self.lower_attrs(v.attrs) {
@@ -336,6 +413,7 @@ impl Lowerer {
             name: e.name.name,
             namespace,
             schema: db_schema,
+            layout,
             variants,
             span: e.span,
         })
@@ -386,6 +464,24 @@ impl Lowerer {
         })
     }
 
+    fn lower_type_alias(&mut self, t: ast::TypeAliasDecl, namespace: Option<String>, full_name: &str) -> Result<HirTypeAlias> {
+        let id = *self.db.name_to_id.get(full_name).unwrap();
+        let attrs = match self.lower_attrs(t.attrs) {
+            Ok(a) => a,
+            Err(e) => { self.errors.push(e); Vec::new() }
+        };
+        let ty = self.lower_type(t.ty, namespace.as_deref())?;
+
+        Ok(HirTypeAlias {
+            id,
+            attrs,
+            name: t.name.name,
+            namespace,
+            ty,
+            span: t.span,
+        })
+    }
+
     fn lower_attrs(&mut self, attrs: Vec<ast::Attribute>) -> Result<Vec<HirAttribute>> {
         let mut hir_attrs = Vec::new();
         for attr in attrs {
@@ -415,6 +511,16 @@ impl Lowerer {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
                             let inner = self.lower_type(args[0].ty.clone(), namespace)?;
+                            // Validate that inner is a primitive type or enum
+                            match &inner {
+                                HirType::Primitive(_) | HirType::Enum(_) => {}
+                                _ => {
+                                    self.errors.push(KqlError::semantic(
+                                        n.span,
+                                        "Key type argument must be a primitive type or an enum".to_string(),
+                                    ));
+                                }
+                            }
                             return Ok(HirType::Key {
                                 entity: None,
                                 inner: Box::new(inner),
@@ -422,11 +528,27 @@ impl Lowerer {
                         } else if args.len() == 2 {
                             let entity_ty = self.lower_type(args[0].ty.clone(), namespace)?;
                             let inner = self.lower_type(args[1].ty.clone(), namespace)?;
+                            
                             let entity = if let HirType::Struct(id) = entity_ty {
                                 Some(id)
                             } else {
+                                self.errors.push(KqlError::semantic(
+                                    n.span,
+                                    "First argument to Key<Entity, T> must be a struct type".to_string(),
+                                ));
                                 None
                             };
+
+                            match &inner {
+                                HirType::Primitive(_) | HirType::Enum(_) => {}
+                                _ => {
+                                    self.errors.push(KqlError::semantic(
+                                        n.span,
+                                        "Second argument to Key<Entity, T> must be a primitive type or an enum".to_string(),
+                                    ));
+                                }
+                            }
+
                             return Ok(HirType::Key {
                                 entity,
                                 inner: Box::new(inner),
@@ -475,39 +597,36 @@ impl Lowerer {
                 }
 
                 // Resolve type name
-                if let Some(id) = self.db.name_to_id.get(&n.name) {
-                    let kind = self.db.id_to_kind.get(id).unwrap();
-                    return match kind {
-                        HirKind::Struct => Ok(HirType::Struct(*id)),
-                        HirKind::Enum => Ok(HirType::Enum(*id)),
-                        HirKind::Let => Err(KqlError::semantic(n.span, format!("{} is a variable, not a type", n.name))),
-                    };
+                if let Some(&id) = self.db.name_to_id.get(&n.name) {
+                    return self.resolve_id_as_type(id, n.span);
                 }
 
                 // Try to resolve in current namespace
                 if let Some(ns) = namespace {
                     let qualified_name = format!("{}::{}", ns, n.name);
-                    if let Some(id) = self.db.name_to_id.get(&qualified_name) {
-                        let kind = self.db.id_to_kind.get(id).unwrap();
-                        return match kind {
-                            HirKind::Struct => Ok(HirType::Struct(*id)),
-                            HirKind::Enum => Ok(HirType::Enum(*id)),
-                            HirKind::Let => Err(KqlError::semantic(n.span, format!("{} is a variable, not a type", qualified_name))),
-                        };
+                    if let Some(&id) = self.db.name_to_id.get(&qualified_name) {
+                        return self.resolve_id_as_type(id, n.span);
                     }
                 }
 
                 // Handle primitive types
                 match n.name.as_str() {
+                    "i8" => Ok(HirType::Primitive(PrimitiveType::I8)),
+                    "i16" => Ok(HirType::Primitive(PrimitiveType::I16)),
                     "i32" => Ok(HirType::Primitive(PrimitiveType::I32)),
                     "i64" => Ok(HirType::Primitive(PrimitiveType::I64)),
+                    "u8" => Ok(HirType::Primitive(PrimitiveType::U8)),
+                    "u16" => Ok(HirType::Primitive(PrimitiveType::U16)),
+                    "u32" => Ok(HirType::Primitive(PrimitiveType::U32)),
+                    "u64" => Ok(HirType::Primitive(PrimitiveType::U64)),
                     "f32" => Ok(HirType::Primitive(PrimitiveType::F32)),
                     "f64" => Ok(HirType::Primitive(PrimitiveType::F64)),
                     "String" | "string" => Ok(HirType::Primitive(PrimitiveType::String)),
                     "Bool" | "bool" | "boolean" => Ok(HirType::Primitive(PrimitiveType::Bool)),
                     "DateTime" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
                     "Uuid" | "UUID" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
-                    "D128" | "d128" => Ok(HirType::Primitive(PrimitiveType::D128)),
+                    "d64" | "D64" => Ok(HirType::Primitive(PrimitiveType::D64)),
+                    "d128" | "D128" => Ok(HirType::Primitive(PrimitiveType::D128)),
                     _ => Err(KqlError::semantic(n.span, format!("Unknown type: {}", n.name))),
                 }
             }
@@ -519,6 +638,56 @@ impl Lowerer {
                 let inner = self.lower_type(*o.inner, namespace)?;
                 Ok(HirType::Optional(Box::new(inner)))
             }
+        }
+    }
+
+    fn resolve_id_as_type(&mut self, id: HirId, span: Span) -> Result<HirType> {
+        if self.resolving_aliases.contains(&id) {
+            return Err(KqlError::semantic(span, "Recursive type alias detected".to_string()));
+        }
+
+        let kind = self.db.id_to_kind.get(&id).cloned();
+        match kind {
+            Some(HirKind::Struct) => Ok(HirType::Struct(id)),
+            Some(HirKind::Enum) => Ok(HirType::Enum(id)),
+            Some(HirKind::TypeAlias) => {
+                if let Some(alias) = self.db.type_aliases.get(&id) {
+                    return Ok(alias.ty.clone());
+                }
+
+                // Lazy lowering of type alias
+                if let Some(decl) = self.ast_decls.get(&id).cloned() {
+                    if let ast::Decl::TypeAlias(t) = decl {
+                        self.resolving_aliases.push(id);
+                        
+                        // We need the full name and namespace to lower it properly
+                        // Let's find them from db.name_to_id
+                        let mut full_name = String::new();
+                        for (name, &name_id) in &self.db.name_to_id {
+                            if name_id == id {
+                                full_name = name.clone();
+                                break;
+                            }
+                        }
+                        
+                        let namespace = if full_name.contains("::") {
+                            let parts: Vec<&str> = full_name.split("::").collect();
+                            Some(parts[..parts.len()-1].join("::"))
+                        } else {
+                            None
+                        };
+
+                        let result = self.lower_type_alias(t, namespace, &full_name);
+                        self.resolving_aliases.pop();
+                        
+                        let hir_alias = result?;
+                        self.db.type_aliases.insert(id, hir_alias.clone());
+                        return Ok(hir_alias.ty);
+                    }
+                }
+                Ok(HirType::Unknown)
+            }
+            _ => Ok(HirType::Unknown),
         }
     }
 
@@ -582,6 +751,13 @@ impl Lowerer {
                         match kind {
                             HirKind::Struct => HirType::Struct(id),
                             HirKind::Enum => HirType::Enum(id),
+                            HirKind::TypeAlias => {
+                                if let Some(alias) = self.db.type_aliases.get(&id) {
+                                    alias.ty.clone()
+                                } else {
+                                    HirType::Unknown
+                                }
+                            }
                             HirKind::Let => HirType::Unknown,
                         }
                     }

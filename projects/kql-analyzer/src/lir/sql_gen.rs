@@ -396,14 +396,21 @@ impl SqlGenerator {
                 // Generate a CAST(expr AS target_ty)
                 let data_type = match target_ty {
                     crate::hir::HirType::Primitive(p) => match p {
+                        crate::hir::PrimitiveType::I8 => DataType::Custom(ObjectName(vec![Ident::new("TINYINT")]), vec![]),
+                        crate::hir::PrimitiveType::I16 => DataType::SmallInt(None),
                         crate::hir::PrimitiveType::I32 => DataType::Int(None),
                         crate::hir::PrimitiveType::I64 => DataType::BigInt(None),
+                        crate::hir::PrimitiveType::U8 => DataType::Custom(ObjectName(vec![Ident::new("TINYINT UNSIGNED")]), vec![]),
+                        crate::hir::PrimitiveType::U16 => DataType::Custom(ObjectName(vec![Ident::new("SMALLINT UNSIGNED")]), vec![]),
+                        crate::hir::PrimitiveType::U32 => DataType::Custom(ObjectName(vec![Ident::new("INT UNSIGNED")]), vec![]),
+                        crate::hir::PrimitiveType::U64 => DataType::Custom(ObjectName(vec![Ident::new("BIGINT UNSIGNED")]), vec![]),
                         crate::hir::PrimitiveType::F32 => DataType::Float(None),
                         crate::hir::PrimitiveType::F64 => DataType::Double,
                         crate::hir::PrimitiveType::String => DataType::Varchar(None),
                         crate::hir::PrimitiveType::Bool => DataType::Boolean,
                         crate::hir::PrimitiveType::DateTime => DataType::Timestamp(None, sqlparser::ast::TimezoneInfo::None),
                         crate::hir::PrimitiveType::Uuid => DataType::Uuid,
+                        crate::hir::PrimitiveType::D64 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
                         crate::hir::PrimitiveType::D128 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
                     },
                     _ => DataType::Varchar(None), // Fallback
@@ -887,9 +894,14 @@ impl SqlGenerator {
 
     fn generate_column_def(&self, col: &Column) -> ColumnDef {
         let data_type = match &col.ty {
+            ColumnType::I8 => DataType::Custom(ObjectName(vec![Ident::new("TINYINT")]), vec![]),
             ColumnType::I16 => DataType::SmallInt(None),
             ColumnType::I32 => DataType::Int(None),
             ColumnType::I64 => DataType::BigInt(None),
+            ColumnType::U8 => DataType::Custom(ObjectName(vec![Ident::new("TINYINT UNSIGNED")]), vec![]),
+            ColumnType::U16 => DataType::Custom(ObjectName(vec![Ident::new("SMALLINT UNSIGNED")]), vec![]),
+            ColumnType::U32 => DataType::Custom(ObjectName(vec![Ident::new("INT UNSIGNED")]), vec![]),
+            ColumnType::U64 => DataType::Custom(ObjectName(vec![Ident::new("BIGINT UNSIGNED")]), vec![]),
             ColumnType::F32 => DataType::Float(None),
             ColumnType::F64 => DataType::Double,
             ColumnType::String(len) => DataType::Varchar(len.map(|l| CharacterLength::IntegerLength {
@@ -899,7 +911,14 @@ impl SqlGenerator {
             ColumnType::Bool => DataType::Boolean,
             ColumnType::DateTime => DataType::Timestamp(None, sqlparser::ast::TimezoneInfo::None),
             ColumnType::Uuid => DataType::Uuid,
-            ColumnType::Json => DataType::JSON,
+            ColumnType::Json => {
+                if self.dialect == SqlDialect::Postgres {
+                    DataType::Custom(ObjectName(vec![Ident::new("JSONB")]), vec![])
+                } else {
+                    DataType::JSON
+                }
+            },
+            ColumnType::Decimal64 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
             ColumnType::Decimal128 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
         };
 

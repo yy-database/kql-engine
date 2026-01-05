@@ -128,11 +128,26 @@ impl<'a> Parser<'a> {
             TokenKind::Enum => self.parse_enum_declaration(attrs).map(Decl::Enum),
             TokenKind::Let => self.parse_let_declaration(attrs).map(Decl::Let),
             TokenKind::Namespace => self.parse_namespace_declaration(attrs).map(Decl::Namespace),
+            TokenKind::Type => self.parse_type_alias_declaration(attrs).map(Decl::TypeAlias),
             _ => Err(KqlError::parse(
                 self.curr.span.clone(),
-                format!("Expected declaration (struct, enum, let, namespace), found {:?}", self.curr.kind),
+                format!("Expected declaration (struct, enum, let, namespace, type), found {:?}", self.curr.kind),
             )),
         }
+    }
+
+    fn parse_type_alias_declaration(&mut self, attrs: Vec<Attribute>) -> Result<TypeAliasDecl> {
+        let start_span = self.expect(TokenKind::Type)?.span;
+        let name = self.parse_ident()?;
+        self.expect(TokenKind::Eq)?;
+        let ty = self.parse_type()?;
+        self.consume(TokenKind::Semicolon); // Optional semicolon
+
+        let span = Span {
+            start: attrs.first().map(|a| a.span.start).unwrap_or(start_span.start),
+            end: ty.span().end,
+        };
+        Ok(TypeAliasDecl { attrs, name, ty, span })
     }
 
     fn parse_struct_declaration(&mut self, attrs: Vec<Attribute>) -> Result<StructDecl> {
@@ -265,12 +280,21 @@ impl<'a> Parser<'a> {
         let token = self.curr.clone();
         let mut ty = match token.kind {
             TokenKind::Ident => {
-                let name = token.text.clone();
+                let mut name = token.text.clone();
                 let start_span = token.span.clone();
                 self.advance();
 
+                // Handle qualified names: Namespace::Type
+                while self.curr.kind == TokenKind::Colon && self.peek.kind == TokenKind::Colon {
+                    self.advance(); // :
+                    self.advance(); // :
+                    let next_ident = self.parse_ident()?;
+                    name.push_str("::");
+                    name.push_str(&next_ident.name);
+                }
+
                 let mut args = None;
-                let mut end_span = start_span.clone();
+                let mut end_span = self.prev.span.clone();
 
                 if self.curr.kind == TokenKind::Less {
                     self.advance();

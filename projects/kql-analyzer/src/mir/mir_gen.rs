@@ -55,6 +55,11 @@ impl MirLowerer {
 
         // 2. Lower structs to tables
         for s in self.hir_db.structs.values() {
+            // Skip structs that are marked as @layout(json) - they don't get their own table
+            if matches!(s.layout, Some(crate::hir::StructLayout::Json)) {
+                continue;
+            }
+
             let mut table_name = to_snake_case(&s.name);
             let mut schema = s.schema.clone(); // Use schema from HIR (propagated from namespace)
             let mut primary_key = None;
@@ -700,18 +705,32 @@ impl MirLowerer {
     fn lower_type(&self, ty: &HirType) -> Result<ColumnType> {
         match ty {
             HirType::Primitive(p) => match p {
+                PrimitiveType::I8 => Ok(ColumnType::I8),
+                PrimitiveType::I16 => Ok(ColumnType::I16),
                 PrimitiveType::I32 => Ok(ColumnType::I32),
                 PrimitiveType::I64 => Ok(ColumnType::I64),
+                PrimitiveType::U8 => Ok(ColumnType::U8),
+                PrimitiveType::U16 => Ok(ColumnType::U16),
+                PrimitiveType::U32 => Ok(ColumnType::U32),
+                PrimitiveType::U64 => Ok(ColumnType::U64),
                 PrimitiveType::F32 => Ok(ColumnType::F32),
                 PrimitiveType::F64 => Ok(ColumnType::F64),
                 PrimitiveType::String => Ok(ColumnType::String(None)),
                 PrimitiveType::Bool => Ok(ColumnType::Bool),
                 PrimitiveType::DateTime => Ok(ColumnType::DateTime),
                 PrimitiveType::Uuid => Ok(ColumnType::Uuid),
+                PrimitiveType::D64 => Ok(ColumnType::Decimal64),
                 PrimitiveType::D128 => Ok(ColumnType::Decimal128),
             },
             HirType::Struct(_) => Ok(ColumnType::Json),
-            HirType::Enum(_) => Ok(ColumnType::I32),
+            HirType::Enum(id) => {
+                if let Some(e) = self.hir_db.enums.get(id) {
+                    if let Some(layout) = &e.layout {
+                        return self.lower_type(layout);
+                    }
+                }
+                Ok(ColumnType::I32)
+            }
             HirType::List(_) => Ok(ColumnType::Json),
             HirType::Optional(inner) => self.lower_type(inner),
             HirType::ForeignKey { entity, .. } => self.get_pk_type(entity),

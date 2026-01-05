@@ -123,6 +123,21 @@ impl RustGenerator {
     fn gen_enum(&self, e: &HirEnum, indent: usize) -> String {
         let indent_str = "    ".repeat(indent);
         let mut out = String::new();
+        
+        if let Some(layout) = &e.layout {
+            let repr = match layout {
+                HirType::Primitive(p) => match p {
+                    PrimitiveType::I32 => Some("i32"),
+                    PrimitiveType::I64 => Some("i64"),
+                    _ => None,
+                },
+                _ => None,
+            };
+            if let Some(r) = repr {
+                out.push_str(&format!("{}#[repr({})]\n", indent_str, r));
+            }
+        }
+
         out.push_str(&format!("{}#[derive(Debug, Clone, Serialize, Deserialize)]\n", indent_str));
         out.push_str(&format!("{}pub enum {} {{\n", indent_str, e.name));
         for v in &e.variants {
@@ -267,14 +282,21 @@ impl RustGenerator {
     fn gen_type(&self, ty: &HirType) -> String {
         match ty {
             HirType::Primitive(p) => match p {
+                PrimitiveType::I8 => "i8".to_string(),
+                PrimitiveType::I16 => "i16".to_string(),
                 PrimitiveType::I32 => "i32".to_string(),
                 PrimitiveType::I64 => "i64".to_string(),
+                PrimitiveType::U8 => "u8".to_string(),
+                PrimitiveType::U16 => "u16".to_string(),
+                PrimitiveType::U32 => "u32".to_string(),
+                PrimitiveType::U64 => "u64".to_string(),
                 PrimitiveType::F32 => "f32".to_string(),
                 PrimitiveType::F64 => "f64".to_string(),
                 PrimitiveType::String => "String".to_string(),
                 PrimitiveType::Bool => "bool".to_string(),
                 PrimitiveType::DateTime => "chrono::DateTime<chrono::Utc>".to_string(),
                 PrimitiveType::Uuid => "uuid::Uuid".to_string(),
+                PrimitiveType::D64 => "rust_decimal::Decimal".to_string(),
                 PrimitiveType::D128 => "rust_decimal::Decimal".to_string(),
             },
             HirType::Struct(id) => self.db.structs.get(id).map(|s| s.name.clone()).unwrap_or_else(|| "UnknownStruct".to_string()),

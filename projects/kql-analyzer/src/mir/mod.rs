@@ -140,9 +140,14 @@ pub struct Column {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ColumnType {
+    I8,
     I16,
     I32,
     I64,
+    U8,
+    U16,
+    U32,
+    U64,
     F32,
     F64,
     String(Option<usize>), // Optional length
@@ -150,6 +155,7 @@ pub enum ColumnType {
     DateTime,
     Uuid,
     Json,
+    Decimal64,
     Decimal128,
 }
 
