@@ -67,19 +67,7 @@ impl<'a> Parser<'a> {
         let mut decls = Vec::new();
         let start_pos = self.curr.span.start;
         while !self.is_eof() {
-            let decl = self.parse_declaration()?;
-            if let Decl::Namespace(ref ns) = decl {
-                if !ns.is_block {
-                    // This is a top-level namespace. It consumes all subsequent declarations.
-                    let mut ns = ns.clone();
-                    while !self.is_eof() {
-                        ns.decls.push(self.parse_declaration()?);
-                    }
-                    decls.push(Decl::Namespace(ns));
-                    break;
-                }
-            }
-            decls.push(decl);
+            decls.push(self.parse_declaration()?);
         }
         let end_pos = self.prev.span.end;
         Ok(Database {

@@ -4,15 +4,19 @@ use kql_types::{KqlError, Result, Span};
 
 pub struct Lowerer {
     pub db: HirProgram,
+    pub errors: Vec<KqlError>,
 }
 
 impl Lowerer {
     pub fn new() -> Self {
-        Self { db: HirProgram::default() }
+        Self { db: HirProgram::default(), errors: Vec::new() }
     }
 
     pub fn lower_program(&mut self, ast_db: &ast::Database) -> Result<HirProgram> {
         self.lower_decls(ast_db.decls.clone())?;
+        if !self.errors.is_empty() {
+            return Err(self.errors[0].clone());
+        }
         Ok(self.db.clone())
     }
 
@@ -21,7 +25,8 @@ impl Lowerer {
         self.lower_content(decls, None, None)
     }
 
-    fn collect_names(&mut self, decls: Vec<ast::Decl>, namespace: Option<String>, db_schema: Option<String>) -> Result<()> {
+    fn collect_names(&mut self, decls: Vec<ast::Decl>, mut namespace: Option<String>, mut db_schema: Option<String>) -> Result<()> {
+        let mut has_toplevel_ns = false;
         for decl in &decls {
             match decl {
                 ast::Decl::Struct(s) => {
@@ -55,38 +60,56 @@ impl Lowerer {
                     self.db.id_to_kind.insert(id, HirKind::Let);
                 }
                 ast::Decl::Namespace(d) => {
-                    let sub_namespace = if let Some(ns) = &namespace {
-                        format!("{}::{}", ns, d.name.name)
-                    } else {
-                        d.name.name.clone()
-                    };
-
-                    if namespace.is_some() && !d.is_block {
-                         return Err(KqlError::parse(d.span, "Top-level namespace cannot be nested within another namespace. Use block-style 'namespace { ... }' instead.".to_string()));
-                    }
-                    
-                    // Extract @schema from attributes
-                    let mut sub_db_schema = db_schema.clone();
-                    for attr in &d.attrs {
-                        if attr.name.name == "schema" {
-                            if let Some(args) = &attr.args {
-                                if !args.is_empty() {
-                                    if let ast::Expr::Literal(ast::LiteralExpr { kind: ast::LiteralKind::String(s), .. }) = &args[0].value {
-                                        sub_db_schema = Some(s.clone());
-                                    }
-                                }
-                            }
+                    if !d.is_block {
+                        if has_toplevel_ns {
+                            self.errors.push(KqlError::lint(d.span, "Only one top-level namespace is allowed in a single scope."));
                         }
+                        has_toplevel_ns = true;
+                        
+                        if namespace.is_some() {
+                             self.errors.push(KqlError::lint(d.span, "Top-level namespace cannot be nested within another namespace. Use block-style 'namespace { ... }' instead."));
+                        }
+                        
+                        let (new_ns, new_schema) = self.get_ns_and_schema(d, &namespace, &db_schema);
+                        namespace = Some(new_ns);
+                        db_schema = new_schema;
+                    } else {
+                        let (sub_ns, sub_schema) = self.get_ns_and_schema(d, &namespace, &db_schema);
+                        self.collect_names(d.decls.clone(), Some(sub_ns), sub_schema)?;
                     }
-                    
-                    self.collect_names(d.decls.clone(), Some(sub_namespace), sub_db_schema)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn lower_content(&mut self, decls: Vec<ast::Decl>, namespace: Option<String>, db_schema: Option<String>) -> Result<()> {
+    fn get_ns_and_schema(&self, d: &ast::NamespaceDecl, current_ns: &Option<String>, current_schema: &Option<String>) -> (String, Option<String>) {
+        let sub_namespace = if let Some(ns) = current_ns {
+            format!("{}::{}", ns, d.name.name)
+        } else {
+            d.name.name.clone()
+        };
+
+        let mut sub_db_schema = current_schema.clone();
+        for attr in &d.attrs {
+            if attr.name.name == "schema" {
+                if let Some(args) = &attr.args {
+                    if !args.is_empty() {
+                        if let ast::Expr::Literal(ast::LiteralExpr { kind: ast::LiteralKind::String(s), .. }) = &args[0].value {
+                            sub_db_schema = Some(s.clone());
+                        }
+                    } else {
+                        sub_db_schema = Some(d.name.name.clone());
+                    }
+                } else {
+                    sub_db_schema = Some(d.name.name.clone());
+                }
+            }
+        }
+        (sub_namespace, sub_db_schema)
+    }
+
+    fn lower_content(&mut self, decls: Vec<ast::Decl>, mut namespace: Option<String>, mut db_schema: Option<String>) -> Result<()> {
         for decl in decls {
             match decl {
                 ast::Decl::Struct(s) => {
@@ -95,8 +118,10 @@ impl Lowerer {
                     } else {
                         s.name.name.clone()
                     };
-                    let hir_s = self.lower_struct(s, namespace.clone(), db_schema.clone(), &full_name)?;
-                    self.db.structs.insert(hir_s.id, hir_s);
+                    match self.lower_struct(s, namespace.clone(), db_schema.clone(), &full_name) {
+                        Ok(hir_s) => { self.db.structs.insert(hir_s.id, hir_s); }
+                        Err(e) => self.errors.push(e),
+                    }
                 }
                 ast::Decl::Enum(e) => {
                     let full_name = if let Some(ns) = &namespace {
@@ -104,8 +129,10 @@ impl Lowerer {
                     } else {
                         e.name.name.clone()
                     };
-                    let hir_e = self.lower_enum(e, namespace.clone(), db_schema.clone(), &full_name)?;
-                    self.db.enums.insert(hir_e.id, hir_e);
+                    match self.lower_enum(e, namespace.clone(), db_schema.clone(), &full_name) {
+                        Ok(hir_e) => { self.db.enums.insert(hir_e.id, hir_e); }
+                        Err(e) => self.errors.push(e),
+                    }
                 }
                 ast::Decl::Let(l) => {
                     let full_name = if let Some(ns) = &namespace {
@@ -113,30 +140,22 @@ impl Lowerer {
                     } else {
                         l.name.name.clone()
                     };
-                    let hir_l = self.lower_let(l, namespace.clone(), &full_name)?;
-                    self.db.lets.insert(hir_l.id, hir_l);
+                    match self.lower_let(l, namespace.clone(), &full_name) {
+                        Ok(hir_l) => { self.db.lets.insert(hir_l.id, hir_l); }
+                        Err(e) => self.errors.push(e),
+                    }
                 }
                 ast::Decl::Namespace(d) => {
-                    let sub_namespace = if let Some(ns) = &namespace {
-                        format!("{}::{}", ns, d.name.name)
+                    if !d.is_block {
+                        let (new_ns, new_schema) = self.get_ns_and_schema(&d, &namespace, &db_schema);
+                        namespace = Some(new_ns);
+                        db_schema = new_schema;
                     } else {
-                        d.name.name.clone()
-                    };
-
-                    // Extract @schema from attributes
-                    let mut sub_db_schema = db_schema.clone();
-                    for attr in &d.attrs {
-                        if attr.name.name == "schema" {
-                            if let Some(args) = &attr.args {
-                                if !args.is_empty() {
-                                    if let ast::Expr::Literal(ast::LiteralExpr { kind: ast::LiteralKind::String(s), .. }) = &args[0].value {
-                                        sub_db_schema = Some(s.clone());
-                                    }
-                                }
-                            }
+                        let (sub_ns, sub_schema) = self.get_ns_and_schema(&d, &namespace, &db_schema);
+                        if let Err(e) = self.lower_content(d.decls, Some(sub_ns), sub_schema) {
+                            self.errors.push(e);
                         }
                     }
-                    self.lower_content(d.decls.clone(), Some(sub_namespace), sub_db_schema)?;
                 }
             }
         }
@@ -145,13 +164,24 @@ impl Lowerer {
 
     fn lower_struct(&mut self, s: ast::StructDecl, namespace: Option<String>, db_schema: Option<String>, full_name: &str) -> Result<HirStruct> {
         let id = *self.db.name_to_id.get(full_name).unwrap();
-        let attrs = self.lower_attrs(s.attrs)?;
+        let attrs = match self.lower_attrs(s.attrs) {
+            Ok(a) => a,
+            Err(e) => { self.errors.push(e); Vec::new() }
+        };
         let mut fields = Vec::new();
         for f in s.fields {
+            let f_attrs = match self.lower_attrs(f.attrs) {
+                Ok(a) => a,
+                Err(e) => { self.errors.push(e); Vec::new() }
+            };
+            let f_ty = match self.lower_type(f.ty, namespace.as_deref()) {
+                Ok(t) => t,
+                Err(e) => { self.errors.push(e); HirType::Unknown }
+            };
             fields.push(HirField {
-                attrs: self.lower_attrs(f.attrs)?,
+                attrs: f_attrs,
                 name: f.name.name,
-                ty: self.lower_type(f.ty, namespace.as_deref())?,
+                ty: f_ty,
                 span: f.span,
             });
         }
@@ -168,16 +198,31 @@ impl Lowerer {
 
     fn lower_enum(&mut self, e: ast::EnumDecl, namespace: Option<String>, db_schema: Option<String>, full_name: &str) -> Result<HirEnum> {
         let id = *self.db.name_to_id.get(full_name).unwrap();
-        let attrs = self.lower_attrs(e.attrs)?;
+        let attrs = match self.lower_attrs(e.attrs) {
+            Ok(a) => a,
+            Err(e) => { self.errors.push(e); Vec::new() }
+        };
         let mut variants = Vec::new();
         for v in e.variants {
+            let v_attrs = match self.lower_attrs(v.attrs) {
+                Ok(a) => a,
+                Err(e) => { self.errors.push(e); Vec::new() }
+            };
             let fields = if let Some(f_vec) = v.fields {
                 let mut hir_f_vec = Vec::new();
                 for f in f_vec {
+                    let f_attrs = match self.lower_attrs(f.attrs) {
+                        Ok(a) => a,
+                        Err(e) => { self.errors.push(e); Vec::new() }
+                    };
+                    let f_ty = match self.lower_type(f.ty, namespace.as_deref()) {
+                        Ok(t) => t,
+                        Err(e) => { self.errors.push(e); HirType::Unknown }
+                    };
                     hir_f_vec.push(HirField {
-                        attrs: self.lower_attrs(f.attrs)?,
+                        attrs: f_attrs,
                         name: f.name.name,
-                        ty: self.lower_type(f.ty, namespace.as_deref())?,
+                        ty: f_ty,
                         span: f.span,
                     });
                 }
@@ -186,7 +231,7 @@ impl Lowerer {
                 None
             };
             variants.push(HirVariant {
-                attrs: self.lower_attrs(v.attrs)?,
+                attrs: v_attrs,
                 name: v.name.name,
                 fields,
                 span: v.span,
@@ -205,17 +250,28 @@ impl Lowerer {
 
     fn lower_let(&mut self, l: ast::LetDecl, namespace: Option<String>, full_name: &str) -> Result<HirLet> {
         let id = *self.db.name_to_id.get(full_name).unwrap();
-        let attrs = self.lower_attrs(l.attrs)?;
-        let value = self.lower_expr(l.value)?;
+        let attrs = match self.lower_attrs(l.attrs) {
+            Ok(a) => a,
+            Err(e) => { self.errors.push(e); Vec::new() }
+        };
+        let value = match self.lower_expr(l.value) {
+            Ok(v) => v,
+            Err(e) => { 
+                self.errors.push(e); 
+                HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(0)), ty: HirType::Unknown, span: l.span }
+            }
+        };
         let ty = if let Some(ast_ty) = l.ty {
-            self.lower_type(ast_ty, namespace.as_deref())?
+            match self.lower_type(ast_ty, namespace.as_deref()) {
+                Ok(t) => t,
+                Err(e) => { self.errors.push(e); HirType::Unknown }
+            }
         } else {
             value.ty.clone()
         };
 
-        // Type checking for let assignment
         if ty != HirType::Unknown && value.ty != HirType::Unknown && ty != value.ty {
-            return Err(KqlError::semantic(
+            self.errors.push(KqlError::semantic(
                 l.span,
                 format!(
                     "Type mismatch in let binding: expected {:?}, found {:?}",

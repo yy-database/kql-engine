@@ -107,13 +107,11 @@ fn test_namespace_validation() {
     let mut parser = Parser::new(input);
     let ast = parser.parse().unwrap();
     let mut lowerer = Lowerer::new();
-    let result = lowerer.lower_program(&ast);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("Top-level namespace cannot be nested"));
+    let _ = lowerer.lower_program(&ast);
+    assert!(!lowerer.errors.is_empty());
+    assert!(lowerer.errors.iter().any(|e| e.to_string().contains("Top-level namespace cannot be nested")));
 
-    // Test: Single top-level namespace enforcement in Parser
-    // Actually, our parser just stops after the first top-level namespace,
-    // so a second one would just be ignored (if it's brace-less).
+    // Test: Multiple top-level namespaces enforcement in Lowerer (as lint error)
     let input = r#"
         namespace mysql
         struct UserA {}
@@ -122,29 +120,18 @@ fn test_namespace_validation() {
     "#;
     let mut parser = Parser::new(input);
     let ast = parser.parse().unwrap();
-    // The parser consumes everything after 'namespace mysql' into mysql's decls.
-    // So 'namespace pg' and 'struct UserB' are inside 'mysql'.
-    // Then 'mysql' is a top-level brace-less namespace, which is nested (effectively).
-    // Wait, let's trace:
-    // 1. parse() sees 'namespace mysql'. is_block = false.
-    // 2. It enters the 'while !self.is_eof()' loop at line 75 in parser.rs.
-    // 3. It parses 'struct UserA {}'.
-    // 4. It parses 'namespace pg'. is_block = false.
-    // 5. It parses 'struct UserB {}'.
-    // 6. Loop ends.
-    // So AST is Database { decls: [ Namespace { name: "mysql", decls: [ Struct(UserA), Namespace(pg), Struct(UserB) ] } ] }
-    // When lowering, the inner 'namespace pg' will trigger the "Top-level namespace cannot be nested" error.
+    
     let mut lowerer = Lowerer::new();
-    let result = lowerer.lower_program(&ast);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("Top-level namespace cannot be nested"));
+    let _ = lowerer.lower_program(&ast);
+    assert!(!lowerer.errors.is_empty());
+    assert!(lowerer.errors.iter().any(|e| e.to_string().contains("Only one top-level namespace is allowed")));
 }
 
 #[test]
 fn test_toplevel_namespace() {
     let input = r#"
-        @schema("auth")
-        namespace Auth
+        @schema
+        namespace auth
         
         @table("users")
         struct User {
@@ -163,7 +150,7 @@ fn test_toplevel_namespace() {
     let mut mir_lowerer = MirLowerer::new(hir_db);
     let mir_db = mir_lowerer.lower().unwrap();
 
-    let user_table = mir_db.tables.get("Auth::User").expect("Table 'Auth::User' not found in MIR");
+    let user_table = mir_db.tables.get("auth::User").expect("Table 'auth::User' not found in MIR");
     assert_eq!(user_table.name, "users");
     assert_eq!(user_table.schema, Some("auth".to_string()));
 
@@ -174,10 +161,31 @@ fn test_toplevel_namespace() {
 }
 
 #[test]
+fn test_multiple_errors_collection() {
+    let input = r#"
+        namespace mysql {
+            namespace pg
+        }
+        namespace redis
+        namespace mongo
+    "#;
+    let mut parser = Parser::new(input);
+    let ast = parser.parse().unwrap();
+    let mut lowerer = Lowerer::new();
+    let _ = lowerer.lower_program(&ast);
+    
+    // Should have 3 errors:
+    // 1. Nested top-level 'pg'
+    // 2. Multiple top-level 'redis'
+    // 3. Multiple top-level 'mongo'
+    assert!(lowerer.errors.len() >= 3);
+}
+
+#[test]
 fn test_database_block_schema() {
     let input = r#"
-        @schema("auth")
-        namespace Auth {
+        @schema
+        namespace auth {
             @table("users")
             struct User {
                 id: Key<i32>,
@@ -196,7 +204,7 @@ fn test_database_block_schema() {
     let mut mir_lowerer = MirLowerer::new(hir_db);
     let mir_db = mir_lowerer.lower().unwrap();
 
-    let user_table = mir_db.tables.get("Auth::User").expect("Table 'Auth::User' not found in MIR");
+    let user_table = mir_db.tables.get("auth::User").expect("Table 'auth::User' not found in MIR");
     assert_eq!(user_table.name, "users");
     assert_eq!(user_table.schema, Some("auth".to_string()));
 

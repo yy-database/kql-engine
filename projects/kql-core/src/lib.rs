@@ -13,16 +13,11 @@ impl Compiler {
 
     pub fn compile(&mut self, source: &str) -> Result<()> {
         let mut parser = Parser::new(source);
-        let mut decls = Vec::new();
-
-        // Simple loop to parse all declarations in the file
-        while !parser.is_eof() {
-            decls.push(parser.parse_declaration()?);
-        }
+        let ast = parser.parse()?;
 
         let mut lowerer = Lowerer { db: std::mem::take(&mut self.db) };
 
-        lowerer.lower_decls(decls)?;
+        lowerer.lower_program(&ast)?;
         self.db = lowerer.db;
 
         Ok(())

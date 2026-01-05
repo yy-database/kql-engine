@@ -50,6 +50,10 @@ impl KqlError {
         Self::new(KqlErrorKind::CliError { message: message.into() })
     }
 
+    pub fn lint(span: Span, message: impl Into<String>) -> Self {
+        Self::new(KqlErrorKind::LintError { span, message: message.into() })
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new(KqlErrorKind::InternalError { message: message.into() })
     }
@@ -62,6 +66,7 @@ pub enum KqlErrorKind {
     LexicalError { span: Span, message: String },
     ParseError { span: Span, message: String },
     SemanticError { span: Span, message: String },
+    LintError { span: Span, message: String },
     IoError { message: String },
     DatabaseError { message: String },
     CliError { message: String },
