@@ -35,7 +35,10 @@ itertools = "0.12"
 smallvec = "1.11"
 indexmap = { version = "2.2", features = ["serde"] }
 rowan = "0.15"
+toml = "0.8"
+toml_edit = { version = "0.22", features = ["serde"] }
 anyhow = "1.0"
+sqlparser = "0.43"
 tokio = { version = "1.35", features = ["full"] }
 sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "postgres", "mysql", "macros"] }
 

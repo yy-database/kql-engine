@@ -19,6 +19,11 @@ pub enum HirType {
         entity: Option<HirId>,
         inner: Box<HirType>,
     },
+    ForeignKey {
+        name: Option<String>,
+        entity: HirId,
+    },
+    Null,
     Unknown,
 }
 
@@ -53,6 +58,7 @@ pub enum HirExprKind {
     Variable(HirId),
     Symbol(String),
     Call { func: Box<HirExpr>, args: Vec<HirExpr> },
+    Member { object: Box<HirExpr>, member: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +68,7 @@ pub enum HirLiteral {
     Float64(f64),
     String(String),
     Bool(bool),
+    Null,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

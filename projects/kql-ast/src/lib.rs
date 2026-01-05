@@ -19,6 +19,7 @@ pub enum Expr {
     Unary(UnaryExpr),
     Variable(VariableExpr),
     Call(CallExpr),
+    Member(MemberExpr),
 }
 
 impl AstNode for Expr {
@@ -29,6 +30,7 @@ impl AstNode for Expr {
             Expr::Unary(e) => e.span,
             Expr::Variable(e) => e.span,
             Expr::Call(e) => e.span,
+            Expr::Member(e) => e.span,
         }
     }
 }
@@ -46,6 +48,7 @@ pub enum LiteralKind {
     Number(String),
     String(String),
     Boolean(bool),
+    Null,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +119,14 @@ pub struct VariableExpr {
 pub struct CallExpr {
     pub func: Box<Expr>,
     pub args: Vec<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct MemberExpr {
+    pub object: Box<Expr>,
+    pub member: Ident,
     pub span: Span,
 }
 
@@ -237,9 +248,16 @@ impl AstNode for Type {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TypeArg {
+    pub name: Option<Ident>,
+    pub ty: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct NamedType {
     pub name: String,
-    pub args: Option<Vec<Type>>,
+    pub args: Option<Vec<TypeArg>>,
     pub span: Span,
 }
 

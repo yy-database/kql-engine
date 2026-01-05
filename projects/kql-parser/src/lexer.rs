@@ -54,6 +54,7 @@ pub enum TokenKind {
     String,
     Number,
     Boolean,
+    Null,
 
     // Trivia (Important for Lossless parsing)
     Whitespace,
@@ -135,6 +136,7 @@ impl<'a> Lexer<'a> {
                         "namespace" => TokenKind::Namespace,
                         "true" => TokenKind::Boolean,
                         "false" => TokenKind::Boolean,
+                        "null" => TokenKind::Null,
                         _ => TokenKind::Ident,
                     }
                 }

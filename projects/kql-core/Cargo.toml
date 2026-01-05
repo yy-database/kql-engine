@@ -11,8 +11,10 @@ kql-parser = { workspace = true }
 kql-ast = { workspace = true }
 kql-analyzer = { workspace = true }
 kql-types = { workspace = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
 
 [features]
-default = []
-serde = ["dep:serde", "kql-parser/serde", "kql-ast/serde", "kql-analyzer/serde", "kql-types/serde"]
+default = ["serde"]
+serde = ["kql-parser/serde", "kql-ast/serde", "kql-analyzer/serde", "kql-types/serde"]

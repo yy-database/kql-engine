@@ -162,12 +162,27 @@ impl Lowerer {
         Ok(())
     }
 
-    fn lower_struct(&mut self, s: ast::StructDecl, namespace: Option<String>, db_schema: Option<String>, full_name: &str) -> Result<HirStruct> {
+    fn lower_struct(&mut self, s: ast::StructDecl, namespace: Option<String>, mut db_schema: Option<String>, full_name: &str) -> Result<HirStruct> {
         let id = *self.db.name_to_id.get(full_name).unwrap();
         let attrs = match self.lower_attrs(s.attrs) {
             Ok(a) => a,
             Err(e) => { self.errors.push(e); Vec::new() }
         };
+
+        // Check for @schema on struct
+        for attr in &attrs {
+            if attr.name == "schema" {
+                if !attr.args.is_empty() {
+                    if let HirExprKind::Literal(HirLiteral::String(s)) = &attr.args[0].value.kind {
+                        db_schema = Some(s.clone());
+                    }
+                } else {
+                    // @schema without args on struct? maybe use struct name? 
+                    // Usually we use it on namespace. On struct it probably needs an arg.
+                }
+            }
+        }
+
         let mut fields = Vec::new();
         for f in s.fields {
             let f_attrs = match self.lower_attrs(f.attrs) {
@@ -270,14 +285,16 @@ impl Lowerer {
             value.ty.clone()
         };
 
-        if ty != HirType::Unknown && value.ty != HirType::Unknown && ty != value.ty {
-            self.errors.push(KqlError::semantic(
-                l.span,
-                format!(
-                    "Type mismatch in let binding: expected {:?}, found {:?}",
-                    ty, value.ty
-                ),
-            ));
+        if ty != HirType::Unknown && value.ty != HirType::Unknown {
+            if !self.can_assign(&ty, &value.ty) {
+                self.errors.push(KqlError::semantic(
+                    l.span,
+                    format!(
+                        "Type mismatch in let binding: expected {:?}, found {:?}",
+                        ty, value.ty
+                    ),
+                ));
+            }
         }
 
         Ok(HirLet {
@@ -319,14 +336,14 @@ impl Lowerer {
                 if n.name == "Key" {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
-                            let inner = self.lower_type(args[0].clone(), namespace)?;
+                            let inner = self.lower_type(args[0].ty.clone(), namespace)?;
                             return Ok(HirType::Key {
                                 entity: None,
                                 inner: Box::new(inner),
                             });
                         } else if args.len() == 2 {
-                            let entity_ty = self.lower_type(args[0].clone(), namespace)?;
-                            let inner = self.lower_type(args[1].clone(), namespace)?;
+                            let entity_ty = self.lower_type(args[0].ty.clone(), namespace)?;
+                            let inner = self.lower_type(args[1].ty.clone(), namespace)?;
                             let entity = if let HirType::Struct(id) = entity_ty {
                                 Some(id)
                             } else {
@@ -344,11 +361,36 @@ impl Lowerer {
                     ));
                 }
 
+                // Special handling for ForeignKey<name: T>
+                if n.name == "ForeignKey" {
+                    if let Some(args) = n.args {
+                        if args.len() == 1 {
+                            let arg = &args[0];
+                            let entity_ty = self.lower_type(arg.ty.clone(), namespace)?;
+                            if let HirType::Struct(id) = entity_ty {
+                                return Ok(HirType::ForeignKey {
+                                    name: arg.name.as_ref().map(|ident| ident.name.clone()),
+                                    entity: id,
+                                });
+                            } else {
+                                return Err(KqlError::semantic(
+                                    n.span,
+                                    "ForeignKey must reference a struct type".to_string(),
+                                ));
+                            }
+                        }
+                    }
+                    return Err(KqlError::semantic(
+                        n.span,
+                        "ForeignKey type must have one generic argument, e.g., ForeignKey<User> or ForeignKey<author: User>".to_string(),
+                    ));
+                }
+
                 // Special handling for List<T> as an alternative to [T]
                 if n.name == "List" {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
-                            let inner = self.lower_type(args[0].clone(), namespace)?;
+                            let inner = self.lower_type(args[0].ty.clone(), namespace)?;
                             return Ok(HirType::List(Box::new(inner)));
                         }
                     }
@@ -426,6 +468,9 @@ impl Lowerer {
                     ast::LiteralKind::Boolean(b) => {
                         (HirExprKind::Literal(HirLiteral::Bool(b)), HirType::Primitive(PrimitiveType::Bool))
                     }
+                    ast::LiteralKind::Null => {
+                        (HirExprKind::Literal(HirLiteral::Null), HirType::Null)
+                    }
                 };
                 Ok(HirExpr { kind, ty, span: l.span })
             }
@@ -470,7 +515,13 @@ impl Lowerer {
                     ast::BinaryOpKind::Or => HirBinaryOp::Or,
                 };
 
-                let ty = self.check_binary_op(&left, op, &right, b.span)?;
+                let ty = match self.check_binary_op(&left, op, &right, b.span) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        self.errors.push(e);
+                        HirType::Unknown
+                    }
+                };
                 Ok(HirExpr { kind: HirExprKind::Binary { left: Box::new(left), op, right: Box::new(right) }, ty, span: b.span })
             }
             ast::Expr::Unary(u) => {
@@ -480,7 +531,13 @@ impl Lowerer {
                     ast::UnaryOpKind::Not => HirUnaryOp::Not,
                 };
 
-                let ty = self.check_unary_op(op, &expr, u.span)?;
+                let ty = match self.check_unary_op(op, &expr, u.span) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        self.errors.push(e);
+                        HirType::Unknown
+                    }
+                };
                 Ok(HirExpr { kind: HirExprKind::Unary { op, expr: Box::new(expr) }, ty, span: u.span })
             }
             ast::Expr::Call(c) => {
@@ -489,19 +546,141 @@ impl Lowerer {
                 for a in c.args {
                     args.push(self.lower_expr(a)?);
                 }
-                let ty = HirType::Unknown;
+                
+                let ty = match &func.ty {
+                    HirType::Struct(id) => {
+                        // Validate arguments against struct fields
+                        if let Some(s) = self.db.structs.get(id) {
+                            if args.len() != s.fields.len() {
+                                self.errors.push(KqlError::semantic(
+                                    c.span,
+                                    format!("Struct '{}' expects {} arguments, but {} were provided", s.name, s.fields.len(), args.len()),
+                                ));
+                            } else {
+                                for (i, (arg, field)) in args.iter().zip(s.fields.iter()).enumerate() {
+                                    if !self.can_assign(&field.ty, &arg.ty) {
+                                        self.errors.push(KqlError::semantic(
+                                            arg.span,
+                                            format!("Argument {} to struct '{}' has type {:?}, but field '{}' expects {:?}", i + 1, s.name, arg.ty, field.name, field.ty),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        HirType::Struct(*id)
+                    }
+                    HirType::Enum(id) => {
+                        // Validate arguments against enum variant fields
+                        if let HirExprKind::Member { member, .. } = &func.kind {
+                            if let Some(e) = self.db.enums.get(id) {
+                                if let Some(v) = e.variants.iter().find(|v| v.name == *member) {
+                                    if let Some(fields) = &v.fields {
+                                        if args.len() != fields.len() {
+                                            self.errors.push(KqlError::semantic(
+                                                c.span,
+                                                format!("Enum variant '{}::{}' expects {} arguments, but {} were provided", e.name, v.name, fields.len(), args.len()),
+                                            ));
+                                        } else {
+                                            for (i, (arg, field)) in args.iter().zip(fields.iter()).enumerate() {
+                                                if !self.can_assign(&field.ty, &arg.ty) {
+                                                    self.errors.push(KqlError::semantic(
+                                                        arg.span,
+                                                        format!("Argument {} to variant '{}::{}' has type {:?}, but field '{}' expects {:?}", i + 1, e.name, v.name, arg.ty, field.name, field.ty),
+                                                    ));
+                                                }
+                                            }
+                                        }
+                                    } else if !args.is_empty() {
+                                        self.errors.push(KqlError::semantic(
+                                            c.span,
+                                            format!("Enum variant '{}::{}' expects 0 arguments, but {} were provided", e.name, v.name, args.len()),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        HirType::Enum(*id)
+                    }
+                    _ => HirType::Unknown,
+                };
+                
                 Ok(HirExpr { kind: HirExprKind::Call { func: Box::new(func), args }, ty, span: c.span })
+            }
+            ast::Expr::Member(m) => {
+                let object = self.lower_expr(*m.object)?;
+                let member_name = m.member.name.clone();
+                let mut ty = HirType::Unknown;
+
+                match &object.ty {
+                    HirType::Struct(id) => {
+                        if let Some(s) = self.db.structs.get(id) {
+                            if let Some(f) = s.fields.iter().find(|f| f.name == member_name) {
+                                ty = f.ty.clone();
+                            } else {
+                                self.errors.push(KqlError::semantic(
+                                    m.member.span,
+                                    format!("Struct '{}' has no field '{}'", s.name, member_name),
+                                ));
+                            }
+                        }
+                    }
+                    HirType::Enum(id) => {
+                        // For enum variants, the type is the enum itself if it's a variant
+                        if let Some(e) = self.db.enums.get(id) {
+                            if let Some(_v) = e.variants.iter().find(|v| v.name == member_name) {
+                                ty = HirType::Enum(*id);
+                            } else {
+                                self.errors.push(KqlError::semantic(
+                                    m.member.span,
+                                    format!("Enum '{}' has no variant '{}'", e.name, member_name),
+                                ));
+                            }
+                        }
+                    }
+                    HirType::Optional(inner) => {
+                        if let HirType::Struct(id) = inner.as_ref() {
+                            if let Some(s) = self.db.structs.get(id) {
+                                if let Some(f) = s.fields.iter().find(|f| f.name == member_name) {
+                                    ty = HirType::Optional(Box::new(f.ty.clone()));
+                                } else {
+                                    self.errors.push(KqlError::semantic(
+                                        m.member.span,
+                                        format!("Struct '{}' has no field '{}'", s.name, member_name),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    HirType::Unknown => {}
+                    _ => {
+                        self.errors.push(KqlError::semantic(
+                            m.span,
+                            format!("Cannot access member '{}' on type {:?}", member_name, object.ty),
+                        ));
+                    }
+                }
+
+                Ok(HirExpr {
+                    kind: HirExprKind::Member {
+                        object: Box::new(object),
+                        member: member_name,
+                    },
+                    ty,
+                    span: m.span,
+                })
             }
         }
     }
 
     fn check_binary_op(&self, left: &HirExpr, op: HirBinaryOp, right: &HirExpr, span: Span) -> Result<HirType> {
+        if left.ty == HirType::Unknown || right.ty == HirType::Unknown {
+            return Ok(HirType::Unknown);
+        }
+
         match op {
             HirBinaryOp::Add | HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div | HirBinaryOp::Mod => {
-                if left.ty == right.ty
-                    && matches!(left.ty, HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128))
-                {
-                    Ok(left.ty.clone())
+                if let Some(ty) = self.promote_numeric_types(&left.ty, &right.ty) {
+                    Ok(ty)
                 }
                 else {
                     Err(KqlError::semantic(
@@ -511,7 +690,11 @@ impl Lowerer {
                 }
             }
             HirBinaryOp::Eq | HirBinaryOp::NotEq => {
-                if left.ty == right.ty {
+                if left.ty == right.ty 
+                    || self.promote_numeric_types(&left.ty, &right.ty).is_some()
+                    || (left.ty == HirType::Null && matches!(right.ty, HirType::Optional(_)))
+                    || (right.ty == HirType::Null && matches!(left.ty, HirType::Optional(_)))
+                {
                     Ok(HirType::Primitive(PrimitiveType::Bool))
                 }
                 else {
@@ -519,12 +702,7 @@ impl Lowerer {
                 }
             }
             HirBinaryOp::Gt | HirBinaryOp::Lt | HirBinaryOp::GtEq | HirBinaryOp::LtEq => {
-                if left.ty == right.ty
-                    && matches!(
-                        left.ty,
-                        HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::DateTime)
-                    )
-                {
+                if left.ty == right.ty || self.promote_numeric_types(&left.ty, &right.ty).is_some() {
                     Ok(HirType::Primitive(PrimitiveType::Bool))
                 }
                 else {
@@ -546,6 +724,10 @@ impl Lowerer {
     }
 
     fn check_unary_op(&self, op: HirUnaryOp, expr: &HirExpr, span: Span) -> Result<HirType> {
+        if expr.ty == HirType::Unknown {
+            return Ok(HirType::Unknown);
+        }
+
         match op {
             HirUnaryOp::Neg => {
                 if matches!(expr.ty, HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128)) {
@@ -563,6 +745,60 @@ impl Lowerer {
                     Err(KqlError::semantic(span, format!("Unary NOT requires boolean type, found {:?}", expr.ty)))
                 }
             }
+        }
+    }
+
+    fn can_assign(&self, target: &HirType, source: &HirType) -> bool {
+        if target == source {
+            return true;
+        }
+
+        if source == &HirType::Null && matches!(target, HirType::Optional(_)) {
+            return true;
+        }
+
+        match (target, source) {
+            (HirType::Primitive(p_t), HirType::Primitive(p_s)) => {
+                match (p_t, p_s) {
+                    // Integer promotion
+                    (PrimitiveType::I64, PrimitiveType::I32) => true,
+                    // Float promotion
+                    (PrimitiveType::F64, PrimitiveType::F32) => true,
+                    // Integer to Float
+                    (PrimitiveType::F32, PrimitiveType::I32) => true,
+                    (PrimitiveType::F64, PrimitiveType::I32) => true,
+                    (PrimitiveType::F64, PrimitiveType::I64) => true,
+                    // For now, allow I64 to I32 because all integer literals are I64
+                    (PrimitiveType::I32, PrimitiveType::I64) => true,
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn promote_numeric_types(&self, t1: &HirType, t2: &HirType) -> Option<HirType> {
+        match (t1, t2) {
+            (HirType::Primitive(p1), HirType::Primitive(p2)) => {
+                match (p1, p2) {
+                    (PrimitiveType::I32, PrimitiveType::I32) => Some(HirType::Primitive(PrimitiveType::I32)),
+                    (PrimitiveType::I64, PrimitiveType::I64) => Some(HirType::Primitive(PrimitiveType::I64)),
+                    (PrimitiveType::F32, PrimitiveType::F32) => Some(HirType::Primitive(PrimitiveType::F32)),
+                    (PrimitiveType::F64, PrimitiveType::F64) => Some(HirType::Primitive(PrimitiveType::F64)),
+                    (PrimitiveType::D128, PrimitiveType::D128) => Some(HirType::Primitive(PrimitiveType::D128)),
+
+                    // Promotion
+                    (PrimitiveType::I32, PrimitiveType::I64) | (PrimitiveType::I64, PrimitiveType::I32) => Some(HirType::Primitive(PrimitiveType::I64)),
+                    (PrimitiveType::I32, PrimitiveType::F32) | (PrimitiveType::F32, PrimitiveType::I32) => Some(HirType::Primitive(PrimitiveType::F32)),
+                    (PrimitiveType::I32, PrimitiveType::F64) | (PrimitiveType::F64, PrimitiveType::I32) => Some(HirType::Primitive(PrimitiveType::F64)),
+                    (PrimitiveType::I64, PrimitiveType::F32) | (PrimitiveType::F32, PrimitiveType::I64) => Some(HirType::Primitive(PrimitiveType::F32)), // Maybe F64?
+                    (PrimitiveType::I64, PrimitiveType::F64) | (PrimitiveType::F64, PrimitiveType::I64) => Some(HirType::Primitive(PrimitiveType::F64)),
+                    (PrimitiveType::F32, PrimitiveType::F64) | (PrimitiveType::F64, PrimitiveType::F32) => Some(HirType::Primitive(PrimitiveType::F64)),
+
+                    _ => None,
+                }
+            }
+            _ => None,
         }
     }
 }

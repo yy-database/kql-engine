@@ -22,6 +22,36 @@ pub struct Table {
     pub columns: Vec<Column>,
     pub primary_key: Option<Vec<String>>,
     pub indexes: Vec<Index>,
+    pub foreign_keys: Vec<ForeignKey>,
+    pub relations: Vec<Relation>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Relation {
+    pub name: String,
+    pub foreign_key_column: String,
+    pub target_table: String,
+    pub target_column: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForeignKey {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub referenced_schema: Option<String>,
+    pub referenced_table: String,
+    pub referenced_columns: Vec<String>,
+    pub on_delete: Option<ReferenceAction>,
+    pub on_update: Option<ReferenceAction>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceAction {
+    NoAction,
+    Restrict,
+    Cascade,
+    SetNull,
+    SetDefault,
 }
 
 #[derive(Debug, Clone, PartialEq)]

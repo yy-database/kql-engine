@@ -276,7 +276,17 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let mut arg_vec = Vec::new();
                     while self.curr.kind != TokenKind::Greater && self.curr.kind != TokenKind::EOF {
-                        arg_vec.push(self.parse_type()?);
+                        let mut arg_name = None;
+                        
+                        // Check for named argument: name: Type
+                        if self.curr.kind == TokenKind::Ident && self.peek.kind == TokenKind::Colon {
+                            arg_name = Some(self.parse_ident()?);
+                            self.expect(TokenKind::Colon)?;
+                        }
+                        
+                        let arg_ty = self.parse_type()?;
+                        arg_vec.push(kql_ast::TypeArg { name: arg_name, ty: arg_ty });
+
                         if !self.consume(TokenKind::Comma) && self.curr.kind != TokenKind::Greater {
                             break;
                         }
@@ -369,6 +379,11 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(expr)
             }
+            TokenKind::Null => {
+                let expr = Expr::Literal(LiteralExpr { kind: LiteralKind::Null, span: token.span });
+                self.advance();
+                Ok(expr)
+            }
             TokenKind::Ident => {
                 let expr = Expr::Variable(VariableExpr { name: token.text.clone(), span: token.span });
                 self.advance();
@@ -446,6 +461,12 @@ impl<'a> Parser<'a> {
                 let end_span = self.expect(TokenKind::RParen)?.span;
                 let span = Span { start: left.span().start, end: end_span.end };
                 Ok(Expr::Call(CallExpr { func: Box::new(left), args, span }))
+            }
+            TokenKind::Dot => {
+                self.advance();
+                let member = self.parse_ident()?;
+                let span = Span { start: left.span().start, end: member.span.end };
+                Ok(Expr::Member(MemberExpr { object: Box::new(left), member, span }))
             }
             _ => Ok(left),
         }

@@ -1,8 +1,8 @@
 use crate::lir::SqlDialect;
-use crate::mir::{Column, ColumnType, MirProgram, Table};
+use crate::mir::{Column, ColumnType, MirProgram, Table, ReferenceAction};
 use sqlparser::ast::{
     CharacterLength, ColumnDef, ColumnOption, ColumnOptionDef, DataType, Ident, ObjectName,
-    Statement, TableConstraint,
+    ReferentialAction, Statement, TableConstraint,
 };
 use sqlparser::tokenizer::Token;
 
@@ -43,6 +43,26 @@ impl SqlGenerator {
                 name: None,
                 columns: pk_cols.iter().map(|c| Ident::new(c)).collect(),
                 is_primary: true,
+                characteristics: None,
+            });
+        }
+
+        for fk in &table.foreign_keys {
+            let mut foreign_table_parts = Vec::new();
+            if let Some(schema) = &fk.referenced_schema {
+                if !(self.dialect == SqlDialect::MySql || self.dialect == SqlDialect::Sqlite) || schema != "public" {
+                    foreign_table_parts.push(Ident::new(schema));
+                }
+            }
+            foreign_table_parts.push(Ident::new(&fk.referenced_table));
+
+            constraints.push(TableConstraint::ForeignKey {
+                name: Some(Ident::new(&fk.name)),
+                columns: fk.columns.iter().map(|c| Ident::new(c)).collect(),
+                foreign_table: ObjectName(foreign_table_parts),
+                referred_columns: fk.referenced_columns.iter().map(|c| Ident::new(c)).collect(),
+                on_delete: fk.on_delete.map(|a| self.map_reference_action(a)),
+                on_update: fk.on_update.map(|a| self.map_reference_action(a)),
                 characteristics: None,
             });
         }
@@ -142,6 +162,16 @@ impl SqlGenerator {
             data_type,
             collation: None,
             options,
+        }
+    }
+
+    fn map_reference_action(&self, action: ReferenceAction) -> ReferentialAction {
+        match action {
+            ReferenceAction::NoAction => ReferentialAction::NoAction,
+            ReferenceAction::Restrict => ReferentialAction::Restrict,
+            ReferenceAction::Cascade => ReferentialAction::Cascade,
+            ReferenceAction::SetNull => ReferentialAction::SetNull,
+            ReferenceAction::SetDefault => ReferentialAction::SetDefault,
         }
     }
 }
