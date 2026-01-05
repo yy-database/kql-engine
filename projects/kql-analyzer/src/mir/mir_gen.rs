@@ -1,5 +1,5 @@
 use crate::hir::{
-    HirExprKind, HirId, HirLiteral, HirProgram, HirType, PrimitiveType,
+    HirExpr, HirExprKind, HirId, HirLiteral, HirProgram, HirType, PrimitiveType,
 };
 use crate::mir::*;
 use kql_types::Result;
@@ -23,6 +23,15 @@ fn to_snake_case(s: &str) -> String {
 impl MirLowerer {
     pub fn new(hir_db: HirProgram) -> Self {
         Self { hir_db }
+    }
+
+    fn expr_to_string(&self, expr: &HirExpr) -> Option<String> {
+        match &expr.kind {
+            HirExprKind::Literal(HirLiteral::String(s)) => Some(s.clone()),
+            HirExprKind::Symbol(s) => Some(s.clone()),
+            HirExprKind::Member { member, .. } => Some(member.clone()),
+            _ => None,
+        }
     }
 
     pub fn lower(&mut self) -> Result<MirProgram> {
@@ -154,24 +163,18 @@ impl MirLowerer {
                                      for arg in &attr.args {
                                          match arg.name.as_deref() {
                                              Some("foreign_key") => {
-                                                 if let HirExprKind::Literal(HirLiteral::String(col)) = &arg.value.kind {
-                                                     foreign_key_column = Some(col.clone());
-                                                 } else if let HirExprKind::Symbol(col) = &arg.value.kind {
-                                                     foreign_key_column = Some(col.clone());
+                                                 if let Some(s) = self.expr_to_string(&arg.value) {
+                                                     foreign_key_column = Some(s);
                                                  }
                                              }
                                              Some("target") => {
-                                                 if let HirExprKind::Literal(HirLiteral::String(t)) = &arg.value.kind {
-                                                     target_table = Some(t.clone());
-                                                 } else if let HirExprKind::Symbol(t) = &arg.value.kind {
-                                                     target_table = Some(t.clone());
+                                                 if let Some(s) = self.expr_to_string(&arg.value) {
+                                                     target_table = Some(s);
                                                  }
                                              }
                                              Some("references") => {
-                                                 if let HirExprKind::Literal(HirLiteral::String(col)) = &arg.value.kind {
-                                                     target_column = Some(col.clone());
-                                                 } else if let HirExprKind::Symbol(col) = &arg.value.kind {
-                                                     target_column = Some(col.clone());
+                                                 if let Some(s) = self.expr_to_string(&arg.value) {
+                                                     target_column = Some(s);
                                                  }
                                              }
                                              _ => {}
@@ -293,10 +296,8 @@ impl MirLowerer {
                                 for arg in &attr.args {
                                     match arg.name.as_deref() {
                                         Some("references") => {
-                                            if let HirExprKind::Literal(HirLiteral::String(col)) = &arg.value.kind {
-                                                referenced_columns = vec![col.clone()];
-                                            } else if let HirExprKind::Symbol(col) = &arg.value.kind {
-                                                referenced_columns = vec![col.clone()];
+                                            if let Some(s) = self.expr_to_string(&arg.value) {
+                                                referenced_columns = vec![s];
                                             }
                                         }
                                         Some("on_delete") => {

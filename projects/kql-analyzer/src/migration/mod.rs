@@ -1,18 +1,19 @@
+pub mod manager;
 use crate::mir::{Table, Column, Index, ForeignKey, MirProgram};
 
 #[derive(Debug, Clone)]
 pub enum MigrationStep {
     CreateTable(Table),
-    DropTable(String),
+    DropTable(Table),
     RenameTable { old_name: String, new_name: String },
     AddColumn { table_name: String, column: Column },
-    DropColumn { table_name: String, column_name: String },
+    DropColumn { table_name: String, column: Column },
     RenameColumn { table_name: String, old_name: String, new_name: String },
     AlterColumn { table_name: String, old_column: Column, new_column: Column },
     AddIndex { table_name: String, index: Index },
-    DropIndex { table_name: String, index_name: String },
+    DropIndex { table_name: String, index: Index },
     AddForeignKey { table_name: String, foreign_key: ForeignKey },
-    DropForeignKey { table_name: String, foreign_key_name: String },
+    DropForeignKey { table_name: String, foreign_key: ForeignKey },
 }
 
 pub struct MigrationEngine {
@@ -29,9 +30,9 @@ impl MigrationEngine {
         let mut steps = Vec::new();
 
         // 1. Detect dropped tables
-        for (name, _) in &self.old_mir.tables {
+        for (name, old_table) in &self.old_mir.tables {
             if !self.new_mir.tables.contains_key(name) {
-                steps.push(MigrationStep::DropTable(name.clone()));
+                steps.push(MigrationStep::DropTable(old_table.clone()));
             }
         }
 
@@ -57,11 +58,11 @@ impl MigrationEngine {
         let new_cols: std::collections::HashMap<_, _> = new_table.columns.iter().map(|c| (&c.name, c)).collect();
 
         // Dropped columns
-        for (&name, &_) in &old_cols {
+        for (&name, &old_col) in &old_cols {
             if !new_cols.contains_key(name) {
                 steps.push(MigrationStep::DropColumn {
                     table_name: table_name.to_string(),
-                    column_name: name.clone(),
+                    column: old_col.clone(),
                 });
             }
         }
@@ -84,7 +85,71 @@ impl MigrationEngine {
             }
         }
 
-        // TODO: Check indexes and foreign keys
+        // Check indexes
+        let old_indexes: std::collections::HashMap<_, _> = old_table.indexes.iter().map(|i| (&i.name, i)).collect();
+        let new_indexes: std::collections::HashMap<_, _> = new_table.indexes.iter().map(|i| (&i.name, i)).collect();
+
+        for (&name, &old_idx) in &old_indexes {
+            if !new_indexes.contains_key(name) {
+                steps.push(MigrationStep::DropIndex {
+                    table_name: table_name.to_string(),
+                    index: old_idx.clone(),
+                });
+            }
+        }
+
+        for (&name, &new_idx) in &new_indexes {
+            if let Some(&old_idx) = old_indexes.get(name) {
+                if old_idx != new_idx {
+                    steps.push(MigrationStep::DropIndex {
+                        table_name: table_name.to_string(),
+                        index: old_idx.clone(),
+                    });
+                    steps.push(MigrationStep::AddIndex {
+                        table_name: table_name.to_string(),
+                        index: new_idx.clone(),
+                    });
+                }
+            } else {
+                steps.push(MigrationStep::AddIndex {
+                    table_name: table_name.to_string(),
+                    index: new_idx.clone(),
+                });
+            }
+        }
+
+        // Check foreign keys
+        let old_fks: std::collections::HashMap<_, _> = old_table.foreign_keys.iter().map(|f| (&f.name, f)).collect();
+        let new_fks: std::collections::HashMap<_, _> = new_table.foreign_keys.iter().map(|f| (&f.name, f)).collect();
+
+        for (&name, &old_fk) in &old_fks {
+            if !new_fks.contains_key(name) {
+                steps.push(MigrationStep::DropForeignKey {
+                    table_name: table_name.to_string(),
+                    foreign_key: old_fk.clone(),
+                });
+            }
+        }
+
+        for (&name, &new_fk) in &new_fks {
+            if let Some(&old_fk) = old_fks.get(name) {
+                if old_fk != new_fk {
+                    steps.push(MigrationStep::DropForeignKey {
+                        table_name: table_name.to_string(),
+                        foreign_key: old_fk.clone(),
+                    });
+                    steps.push(MigrationStep::AddForeignKey {
+                        table_name: table_name.to_string(),
+                        foreign_key: new_fk.clone(),
+                    });
+                }
+            } else {
+                steps.push(MigrationStep::AddForeignKey {
+                    table_name: table_name.to_string(),
+                    foreign_key: new_fk.clone(),
+                });
+            }
+        }
 
         steps
     }

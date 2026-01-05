@@ -180,6 +180,62 @@ impl RustGenerator {
             out.push_str(&format!("{}    }}\n\n", indent_str));
         }
 
+        // Insert method
+        let insert_fields: Vec<_> = s.fields.iter()
+            .filter(|f| !f.auto_increment() && !matches!(f.ty, HirType::Relation { .. }))
+            .collect();
+        
+        if !insert_fields.is_empty() {
+            let field_names: Vec<_> = insert_fields.iter().map(|f| f.name.as_str()).collect();
+            let placeholders: Vec<_> = (1..=insert_fields.len()).map(|i| format!("${}", i)).collect();
+            
+            out.push_str(&format!("{}    pub async fn insert(&self, model: &{}) -> Result<(), sqlx::Error> {{\n", indent_str, s.name));
+            out.push_str(&format!("{}        sqlx::query(\"INSERT INTO {} ({}) VALUES ({})\")\n", 
+                indent_str, 
+                s.name.to_lowercase(), 
+                field_names.join(", "), 
+                placeholders.join(", ")
+            ));
+            for f in insert_fields {
+                out.push_str(&format!("{}            .bind(&model.{})\n", indent_str, f.name));
+            }
+            out.push_str(&format!("{}            .execute(&self.pool)\n", indent_str));
+            out.push_str(&format!("{}            .await?;\n", indent_str));
+            out.push_str(&format!("{}        Ok(())\n", indent_str));
+            out.push_str(&format!("{}    }}\n\n", indent_str));
+        }
+
+        // Update method
+        if let Some(pk) = pk_field {
+            let update_fields: Vec<_> = s.fields.iter()
+                .filter(|f| f.name != pk.name && !matches!(f.ty, HirType::Relation { .. }))
+                .collect();
+            
+            if !update_fields.is_empty() {
+                let mut sets = Vec::new();
+                for (i, f) in update_fields.iter().enumerate() {
+                    sets.push(format!("{} = ${}", f.name, i + 1));
+                }
+                
+                out.push_str(&format!("{}    pub async fn update(&self, model: &{}) -> Result<(), sqlx::Error> {{\n", indent_str, s.name));
+                out.push_str(&format!("{}        sqlx::query(\"UPDATE {} SET {} WHERE {} = ${}\")\n", 
+                    indent_str, 
+                    s.name.to_lowercase(), 
+                    sets.join(", "), 
+                    pk.name,
+                    update_fields.len() + 1
+                ));
+                for f in &update_fields {
+                    out.push_str(&format!("{}            .bind(&model.{})\n", indent_str, f.name));
+                }
+                out.push_str(&format!("{}            .bind(&model.{})\n", indent_str, pk.name));
+                out.push_str(&format!("{}            .execute(&self.pool)\n", indent_str));
+                out.push_str(&format!("{}            .await?;\n", indent_str));
+                out.push_str(&format!("{}        Ok(())\n", indent_str));
+                out.push_str(&format!("{}    }}\n\n", indent_str));
+            }
+        }
+
         // List method
         out.push_str(&format!("{}    pub async fn list(&self) -> Result<Vec<{}>, sqlx::Error> {{\n", indent_str, s.name));
         out.push_str(&format!("{}        sqlx::query_as::<_, {}>( \"SELECT * FROM {}\")\n", indent_str, s.name, s.name.to_lowercase()));

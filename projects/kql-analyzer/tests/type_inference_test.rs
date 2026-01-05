@@ -79,3 +79,44 @@ fn test_builtin_function_inference() {
     let c_let = db.lets.get(c_id).unwrap();
     assert_eq!(c_let.ty, HirType::Primitive(PrimitiveType::I64));
 }
+
+#[test]
+fn test_implicit_cast_insertion() {
+    let input = r#"
+        let x: i32 = 10
+        let y: f64 = 20.5
+        let z = x + y
+    "#;
+
+    let mut parser = Parser::new(input);
+    let mut ast = Vec::new();
+    while !parser.is_eof() {
+        if let Ok(decl) = parser.parse_declaration() {
+            ast.push(decl);
+        } else {
+            break;
+        }
+    }
+
+    let mut lowerer = Lowerer::new();
+    lowerer.lower_decls(ast).unwrap();
+    let db = lowerer.db;
+
+    // Check z
+    let z_id = db.name_to_id.get("z").unwrap();
+    let z_let = db.lets.get(z_id).unwrap();
+    
+    if let HirExprKind::Binary { left, op: _, right } = &z_let.value.kind {
+        // x (i32) should be cast to f64
+        match &left.kind {
+            HirExprKind::Cast { expr: _, target_ty } => {
+                assert_eq!(target_ty, &HirType::Primitive(PrimitiveType::F64));
+            }
+            _ => panic!("Expected left operand to be a Cast, found {:?}", left.kind),
+        }
+        // y is already f64, so no cast needed
+        assert!(matches!(right.kind, HirExprKind::Variable(_)));
+    } else {
+        panic!("Expected binary expression, found {:?}", z_let.value.kind);
+    }
+}

@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 mod cmds;
 
-pub use cmds::{CheckArgs, CompileArgs, MigrateArgs, PullArgs, GenerateArgs};
+pub use cmds::{CheckArgs, CompileArgs, MigrateArgs, PullArgs, GenerateArgs, MigrationArgs};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -17,8 +17,10 @@ pub enum KqlCommands {
     Check(CheckArgs),
     /// Compile a KQL file and output HIR
     Compile(CompileArgs),
-    /// Apply KQL schema to a database (Migration)
+    /// Apply KQL schema to a database (Legacy, full sync)
     Migrate(MigrateArgs),
+    /// Migration commands (diff, generate, apply)
+    Migration(MigrationArgs),
     /// Pull schema from a database and convert to KQL
     Pull(PullArgs),
     /// Generate source code (e.g., Rust models) from KQL

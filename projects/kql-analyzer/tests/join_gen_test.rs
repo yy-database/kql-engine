@@ -1,85 +1,50 @@
-use kql_analyzer::mir::{MirProgram, Table, Column, ColumnType, Relation};
+use kql_parser::Parser;
+use kql_analyzer::hir::lower::Lowerer;
+use kql_analyzer::mir::mir_gen::MirLowerer;
 use kql_analyzer::lir::sql_gen::SqlGenerator;
 use kql_analyzer::lir::SqlDialect;
 
 #[test]
 fn test_auto_join_generation() {
-    let mut mir = MirProgram::default();
-    
-    // User table
-    let user_table = Table {
-        schema: Some("public".to_string()),
-        name: "users".to_string(),
-        columns: vec![
-            Column {
-                name: "id".to_string(),
-                ty: ColumnType::I32,
-                nullable: false,
-                auto_increment: true,
-                default: None,
-            },
-            Column {
-                name: "name".to_string(),
-                ty: ColumnType::String(None),
-                nullable: false,
-                auto_increment: false,
-                default: None,
-            },
-        ],
-        primary_key: Some(vec!["id".to_string()]),
-        indexes: vec![],
-        foreign_keys: vec![],
-        relations: vec![
-            Relation {
-                name: "profile".to_string(),
-                foreign_key_column: "id".to_string(),
-                target_table: "profiles".to_string(),
-                target_column: "user_id".to_string(),
+    let input = r#"
+        @schema("public")
+        namespace db {
+            struct User {
+                @primary_key
+                id: i32,
+                name: string,
+                @relation(foreign_key: "id", references: "user_id")
+                posts: [Post]
             }
-        ],
-    };
-    mir.tables.insert("public::users".to_string(), user_table.clone());
 
-    // Profile table
-    let profile_table = Table {
-        schema: Some("public".to_string()),
-        name: "profiles".to_string(),
-        columns: vec![
-            Column {
-                name: "id".to_string(),
-                ty: ColumnType::I32,
-                nullable: false,
-                auto_increment: true,
-                default: None,
-            },
-            Column {
-                name: "user_id".to_string(),
-                ty: ColumnType::I32,
-                nullable: false,
-                auto_increment: false,
-                default: None,
-            },
-            Column {
-                name: "bio".to_string(),
-                ty: ColumnType::String(None),
-                nullable: true,
-                auto_increment: false,
-                default: None,
-            },
-        ],
-        primary_key: Some(vec!["id".to_string()]),
-        indexes: vec![],
-        foreign_keys: vec![],
-        relations: vec![],
-    };
-    mir.tables.insert("public::profiles".to_string(), profile_table);
+            struct Post {
+                @primary_key
+                id: i32,
+                user_id: i32,
+                title: string,
+                @relation(foreign_key: "user_id", references: "id")
+                author: User
+            }
+        }
+    "#;
 
-    let gen = SqlGenerator::new(mir, SqlDialect::Postgres);
-    let select = gen.generate_select(&user_table, &["profile"]);
-    let sql = format!("{};", select);
+    let mut parser = Parser::new(input);
+    let ast = parser.parse().unwrap();
     
-    println!("Generated SQL: {}", sql);
+    let mut lowerer = Lowerer::new();
+    let hir = lowerer.lower_program(&ast).unwrap();
     
-    assert!(sql.contains("SELECT * FROM public.users AS users"));
-    assert!(sql.contains("LEFT JOIN public.profiles AS profile ON users.id = profile.user_id"));
+    let mut mir_gen = MirLowerer::new(hir);
+    let mir = mir_gen.lower().unwrap();
+    
+    let sql_gen = SqlGenerator::new(mir.clone(), SqlDialect::Postgres);
+    
+    let post_table = mir.tables.get("db::Post").unwrap();
+    let select_sql = sql_gen.generate_select(post_table, &["author"]);
+    
+    let sql_string = format!("{};", select_sql);
+    println!("Generated SQL: {}", sql_string);
+    
+    assert!(sql_string.contains("SELECT * FROM public.post AS post"));
+    assert!(sql_string.contains("LEFT JOIN public.user AS author ON post.user_id = author.id"));
 }

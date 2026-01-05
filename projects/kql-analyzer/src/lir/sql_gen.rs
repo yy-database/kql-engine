@@ -41,15 +41,11 @@ impl SqlGenerator {
                 MigrationStep::CreateTable(table) => {
                     statements.push(self.generate_create_table(&table));
                 }
-                MigrationStep::DropTable(name) => {
-                    // We need a dummy table object to get the name with schema if needed
-                    // Or we just use the name directly. 
-                    // MigrationStep should probably include schema info if possible.
-                    // For now, assume it's in the same schema as others or use simple name.
+                MigrationStep::DropTable(table) => {
                     statements.push(Statement::Drop {
                         object_type: sqlparser::ast::ObjectType::Table,
                         if_exists: true,
-                        names: vec![ObjectName(vec![Ident::new(name)])],
+                        names: vec![self.get_table_object_name(&table)],
                         cascade: false,
                         restrict: false,
                         purge: false,
@@ -68,13 +64,13 @@ impl SqlGenerator {
                         }],
                     });
                 }
-                MigrationStep::DropColumn { table_name, column_name } => {
+                MigrationStep::DropColumn { table_name, column } => {
                     statements.push(Statement::AlterTable {
                         name: ObjectName(vec![Ident::new(table_name)]),
                         if_exists: true,
                         only: false,
                         operations: vec![AlterTableOperation::DropColumn {
-                            column_name: Ident::new(column_name),
+                            column_name: Ident::new(column.name),
                             if_exists: true,
                             cascade: false,
                         }],
@@ -136,11 +132,11 @@ impl SqlGenerator {
                         concurrently: false,
                     });
                 }
-                MigrationStep::DropIndex { table_name: _, index_name } => {
+                MigrationStep::DropIndex { table_name: _, index } => {
                     statements.push(Statement::Drop {
                         object_type: sqlparser::ast::ObjectType::Index,
                         if_exists: true,
-                        names: vec![ObjectName(vec![Ident::new(index_name)])],
+                        names: vec![ObjectName(vec![Ident::new(index.name)])],
                         cascade: false,
                         restrict: false,
                         purge: false,
@@ -171,13 +167,13 @@ impl SqlGenerator {
                         })],
                     });
                 }
-                MigrationStep::DropForeignKey { table_name, foreign_key_name } => {
+                MigrationStep::DropForeignKey { table_name, foreign_key } => {
                     statements.push(Statement::AlterTable {
                         name: ObjectName(vec![Ident::new(table_name)]),
                         if_exists: true,
                         only: false,
                         operations: vec![AlterTableOperation::DropConstraint {
-                            name: Ident::new(foreign_key_name),
+                            name: Ident::new(foreign_key.name),
                             if_exists: true,
                             cascade: false,
                         }],
@@ -193,6 +189,16 @@ impl SqlGenerator {
             .into_iter()
             .map(|stmt| format!("{};", stmt))
             .collect()
+    }
+
+    fn map_reference_action(&self, action: ReferenceAction) -> ReferentialAction {
+        match action {
+            ReferenceAction::NoAction => ReferentialAction::NoAction,
+            ReferenceAction::Restrict => ReferentialAction::Restrict,
+            ReferenceAction::Cascade => ReferentialAction::Cascade,
+            ReferenceAction::SetNull => ReferentialAction::SetNull,
+            ReferenceAction::SetDefault => ReferentialAction::SetDefault,
+        }
     }
 
     pub fn generate_insert(&self, table: &Table) -> Statement {
@@ -550,16 +556,6 @@ impl SqlGenerator {
             data_type,
             collation: None,
             options,
-        }
-    }
-
-    fn map_reference_action(&self, action: ReferenceAction) -> ReferentialAction {
-        match action {
-            ReferenceAction::NoAction => ReferentialAction::NoAction,
-            ReferenceAction::Restrict => ReferentialAction::Restrict,
-            ReferenceAction::Cascade => ReferentialAction::Cascade,
-            ReferenceAction::SetNull => ReferentialAction::SetNull,
-            ReferenceAction::SetDefault => ReferentialAction::SetDefault,
         }
     }
 }

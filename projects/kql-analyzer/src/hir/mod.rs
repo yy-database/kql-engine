@@ -63,6 +63,7 @@ pub enum HirExprKind {
     Symbol(String),
     Call { func: Box<HirExpr>, args: Vec<HirExpr> },
     Member { object: Box<HirExpr>, member: String },
+    Cast { expr: Box<HirExpr>, target_ty: HirType },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -134,6 +135,12 @@ pub struct HirField {
     pub name: String,
     pub ty: HirType,
     pub span: Span,
+}
+
+impl HirField {
+    pub fn auto_increment(&self) -> bool {
+        self.attrs.iter().any(|a| a.name == "auto_increment")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -10,12 +10,16 @@ description = "Analyzer for KQL, including HIR, MIR and LIR"
 kql-types = { workspace = true }
 kql-ast = { workspace = true }
 indexmap = { workspace = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"], optional = true }
 sqlparser = "0.43"
+anyhow = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 kql-parser = { workspace = true }
+tempfile = "3.8"
 
 [features]
-default = []
+default = ["serde"]
 serde = ["dep:serde", "kql-types/serde", "kql-ast/serde"]

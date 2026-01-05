@@ -1,0 +1,8 @@
+@schema("public")
+struct User {
+    @auto_increment
+    id: Key<i32>
+    name: String
+    email: String
+    age: i32?
+}

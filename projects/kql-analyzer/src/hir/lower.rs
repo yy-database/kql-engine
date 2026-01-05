@@ -555,8 +555,8 @@ impl Lowerer {
                 }
             }
             ast::Expr::Binary(b) => {
-                let left = self.lower_expr(*b.left)?;
-                let right = self.lower_expr(*b.right)?;
+                let mut left = self.lower_expr(*b.left)?;
+                let mut right = self.lower_expr(*b.right)?;
                 let op = match b.op.kind {
                     ast::BinaryOpKind::Add => HirBinaryOp::Add,
                     ast::BinaryOpKind::Sub => HirBinaryOp::Sub,
@@ -580,6 +580,52 @@ impl Lowerer {
                         HirType::Unknown
                     }
                 };
+
+                // Insert implicit casts if needed
+                if ty != HirType::Unknown {
+                    match op {
+                        HirBinaryOp::Add | HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div | HirBinaryOp::Mod => {
+                            if left.ty != ty {
+                                let span = left.span;
+                                left = HirExpr {
+                                    kind: HirExprKind::Cast { expr: Box::new(left), target_ty: ty.clone() },
+                                    ty: ty.clone(),
+                                    span,
+                                };
+                            }
+                            if right.ty != ty {
+                                let span = right.span;
+                                right = HirExpr {
+                                    kind: HirExprKind::Cast { expr: Box::new(right), target_ty: ty.clone() },
+                                    ty: ty.clone(),
+                                    span,
+                                };
+                            }
+                        }
+                        HirBinaryOp::Eq | HirBinaryOp::NotEq | HirBinaryOp::Gt | HirBinaryOp::Lt | HirBinaryOp::GtEq | HirBinaryOp::LtEq => {
+                            if let Some(common_ty) = self.promote_numeric_types(&left.ty, &right.ty) {
+                                if left.ty != common_ty {
+                                    let span = left.span;
+                                    left = HirExpr {
+                                        kind: HirExprKind::Cast { expr: Box::new(left), target_ty: common_ty.clone() },
+                                        ty: common_ty.clone(),
+                                        span,
+                                    };
+                                }
+                                if right.ty != common_ty {
+                                    let span = right.span;
+                                    right = HirExpr {
+                                        kind: HirExprKind::Cast { expr: Box::new(right), target_ty: common_ty.clone() },
+                                        ty: common_ty.clone(),
+                                        span,
+                                    };
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
                 Ok(HirExpr { kind: HirExprKind::Binary { left: Box::new(left), op, right: Box::new(right) }, ty, span: b.span })
             }
             ast::Expr::Unary(u) => {
@@ -796,6 +842,34 @@ impl Lowerer {
                     } else {
                         None
                     }
+                } else {
+                    None
+                }
+            }
+            "coalesce" | "ifnull" => {
+                if args.len() >= 2 {
+                    let mut common_ty = args[0].ty.clone();
+                    // Strip optional if needed for comparison
+                    let mut base_ty = match &common_ty {
+                        HirType::Optional(inner) => inner.as_ref().clone(),
+                        _ => common_ty.clone(),
+                    };
+
+                    for arg in &args[1..] {
+                        let arg_base_ty = match &arg.ty {
+                            HirType::Optional(inner) => inner.as_ref().clone(),
+                            _ => arg.ty.clone(),
+                        };
+                        
+                        if let Some(promoted) = self.promote_numeric_types(&base_ty, &arg_base_ty) {
+                            base_ty = promoted;
+                        } else if base_ty != arg_base_ty && arg.ty != HirType::Null {
+                            return None; // Incompatible types
+                        }
+                    }
+                    Some(base_ty)
+                } else if args.len() == 1 {
+                    Some(args[0].ty.clone())
                 } else {
                     None
                 }

@@ -1,8 +1,9 @@
 use indexmap::IndexMap;
+use serde::{Serialize, Deserialize};
 
 pub mod mir_gen;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MirProgram {
     pub tables: IndexMap<String, Table>,
 }
@@ -15,7 +16,7 @@ impl Default for MirProgram {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Table {
     pub schema: Option<String>,
     pub name: String,
@@ -26,7 +27,7 @@ pub struct Table {
     pub relations: Vec<Relation>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Relation {
     pub name: String,
     pub foreign_key_column: String,
@@ -34,7 +35,7 @@ pub struct Relation {
     pub target_column: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ForeignKey {
     pub name: String,
     pub columns: Vec<String>,
@@ -45,7 +46,7 @@ pub struct ForeignKey {
     pub on_update: Option<ReferenceAction>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReferenceAction {
     NoAction,
     Restrict,
@@ -54,7 +55,7 @@ pub enum ReferenceAction {
     SetDefault,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Column {
     pub name: String,
     pub ty: ColumnType,
@@ -63,7 +64,7 @@ pub struct Column {
     pub default: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ColumnType {
     I16,
     I32,
@@ -78,7 +79,7 @@ pub enum ColumnType {
     Decimal128,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Index {
     pub name: String,
     pub columns: Vec<String>,

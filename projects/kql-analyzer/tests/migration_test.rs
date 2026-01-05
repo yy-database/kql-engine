@@ -128,7 +128,7 @@ fn test_migration_rename() {
                     new_name: "full_name".to_string(),
                 });
             }
-            MigrationStep::DropColumn { column_name, .. } if column_name == "name" => {
+            MigrationStep::DropColumn { column, .. } if column.name == "name" => {
                 // Skip drop
             }
             s => adjusted_steps.push(s),
