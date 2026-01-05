@@ -773,6 +773,25 @@ impl Lowerer {
                     _ => false,
                 }
             }
+            // Key<T> can be assigned from T
+            (HirType::Key { inner: t_inner, .. }, source_ty) => {
+                self.can_assign(t_inner, source_ty)
+            }
+            // ForeignKey<T> can be assigned from the Key type of T
+            (HirType::ForeignKey { entity: target_id, .. }, HirType::Key { entity: Some(source_id), .. }) => {
+                target_id == source_id
+            }
+            // ForeignKey<T> can also be assigned from the inner type of the Key of T (e.g. i32)
+            (HirType::ForeignKey { entity: target_id, .. }, source_ty) => {
+                if let Some(s) = self.db.structs.get(target_id) {
+                    if let Some(pk_field) = s.fields.iter().find(|f| matches!(f.ty, HirType::Key { .. })) {
+                        if let HirType::Key { inner, .. } = &pk_field.ty {
+                            return self.can_assign(inner, source_ty);
+                        }
+                    }
+                }
+                false
+            }
             _ => false,
         }
     }

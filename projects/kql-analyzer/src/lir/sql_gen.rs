@@ -2,7 +2,8 @@ use crate::lir::SqlDialect;
 use crate::mir::{Column, ColumnType, MirProgram, Table, ReferenceAction};
 use sqlparser::ast::{
     CharacterLength, ColumnDef, ColumnOption, ColumnOptionDef, DataType, Ident, ObjectName,
-    ReferentialAction, Statement, TableConstraint,
+    ReferentialAction, Statement, TableConstraint, Query, SetExpr, Values, Expr, Value,
+    Assignment,
 };
 use sqlparser::tokenizer::Token;
 
@@ -29,6 +30,154 @@ impl SqlGenerator {
             .into_iter()
             .map(|stmt| format!("{};", stmt))
             .collect()
+    }
+
+    pub fn generate_insert(&self, table: &Table) -> Statement {
+        let table_name = self.get_table_object_name(table);
+        let columns: Vec<Ident> = table.columns.iter()
+            .filter(|c| !c.auto_increment) // Skip auto-increment columns for insert
+            .map(|c| Ident::new(&c.name))
+            .collect();
+
+        let placeholders: Vec<Expr> = (0..columns.len())
+            .map(|_| Expr::Value(Value::Placeholder("?".to_string())))
+            .collect();
+
+        Statement::Insert {
+            or: None,
+            into: true,
+            table_name,
+            columns,
+            overwrite: false,
+            source: Some(Box::new(Query {
+                with: None,
+                body: Box::new(SetExpr::Values(Values {
+                    explicit_row: false,
+                    rows: vec![placeholders],
+                })),
+                order_by: vec![],
+                limit: None,
+                offset: None,
+                fetch: None,
+                locks: vec![],
+                for_clause: None,
+                limit_by: vec![],
+            })),
+            partitioned: None,
+            after_columns: vec![],
+            table: false,
+            on: None,
+            returning: None,
+            replace_into: false,
+            priority: None,
+            ignore: false,
+            table_alias: None,
+        }
+    }
+
+    pub fn generate_update_by_pk(&self, table: &Table) -> Option<Statement> {
+        let pk_cols = table.primary_key.as_ref()?;
+        let table_name = self.get_table_object_name(table);
+        
+        let assignments: Vec<Assignment> = table.columns.iter()
+            .filter(|c| !pk_cols.contains(&c.name))
+            .map(|c| Assignment {
+                id: vec![Ident::new(&c.name)],
+                value: Expr::Value(Value::Placeholder("?".to_string())),
+            })
+            .collect();
+
+        if assignments.is_empty() {
+            return None;
+        }
+
+        let mut selection = None;
+        for pk in pk_cols {
+            let condition = Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident::new(pk))),
+                op: sqlparser::ast::BinaryOperator::Eq,
+                right: Box::new(Expr::Value(Value::Placeholder("?".to_string()))),
+            };
+            selection = match selection {
+                Some(existing) => Some(Expr::BinaryOp {
+                    left: Box::new(existing),
+                    op: sqlparser::ast::BinaryOperator::And,
+                    right: Box::new(condition),
+                }),
+                None => Some(condition),
+            };
+        }
+
+        Some(Statement::Update {
+            table: sqlparser::ast::TableWithJoins {
+                relation: sqlparser::ast::TableFactor::Table {
+                    name: table_name,
+                    alias: None,
+                    args: None,
+                    with_hints: vec![],
+                    version: None,
+                    partitions: vec![],
+                },
+                joins: vec![],
+            },
+            assignments,
+            from: None,
+            selection,
+            returning: None,
+        })
+    }
+
+    pub fn generate_delete_by_pk(&self, table: &Table) -> Option<Statement> {
+        let pk_cols = table.primary_key.as_ref()?;
+        let table_name = self.get_table_object_name(table);
+
+        let mut selection = None;
+        for pk in pk_cols {
+            let condition = Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident::new(pk))),
+                op: sqlparser::ast::BinaryOperator::Eq,
+                right: Box::new(Expr::Value(Value::Placeholder("?".to_string()))),
+            };
+            selection = match selection {
+                Some(existing) => Some(Expr::BinaryOp {
+                    left: Box::new(existing),
+                    op: sqlparser::ast::BinaryOperator::And,
+                    right: Box::new(condition),
+                }),
+                None => Some(condition),
+            };
+        }
+
+        Some(Statement::Delete {
+            tables: vec![],
+            using: None,
+            selection,
+            returning: None,
+            from: vec![sqlparser::ast::TableWithJoins {
+                relation: sqlparser::ast::TableFactor::Table {
+                    name: table_name,
+                    alias: None,
+                    args: None,
+                    with_hints: vec![],
+                    version: None,
+                    partitions: vec![],
+                },
+                joins: vec![],
+            }],
+            order_by: vec![],
+            limit: None,
+        })
+    }
+
+    fn get_table_object_name(&self, table: &Table) -> ObjectName {
+        let mut name_parts = Vec::new();
+        if let Some(schema) = &table.schema {
+            if !(self.dialect == SqlDialect::MySql || self.dialect == SqlDialect::Sqlite) || schema != "public" {
+                name_parts.push(Ident::new(schema));
+            }
+        }
+        name_parts.push(Ident::new(&table.name));
+        ObjectName(name_parts)
     }
 
     fn generate_create_table(&self, table: &Table) -> Statement {
@@ -67,22 +216,13 @@ impl SqlGenerator {
             });
         }
 
-        let mut name_parts = Vec::new();
-        if let Some(schema) = &table.schema {
-            // For MySQL/SQLite, we usually don't want "public." prefix
-            if !(self.dialect == SqlDialect::MySql || self.dialect == SqlDialect::Sqlite) || schema != "public" {
-                name_parts.push(Ident::new(schema));
-            }
-        }
-        name_parts.push(Ident::new(&table.name));
-
         Statement::CreateTable {
             or_replace: false,
             temporary: false,
             external: false,
             if_not_exists: true,
             transient: false,
-            name: ObjectName(name_parts),
+            name: self.get_table_object_name(table),
             columns,
             constraints,
             with_options: vec![],

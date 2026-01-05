@@ -1,5 +1,6 @@
 pub mod sql_gen;
 
+pub use sql_gen::SqlGenerator;
 use sqlparser::dialect::{Dialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect};
 /// LIR is represented using sqlparser's AST for multi-dialect support
 pub use sqlparser::ast::Statement as LirStatement;

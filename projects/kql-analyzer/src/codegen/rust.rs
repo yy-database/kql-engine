@@ -133,6 +133,13 @@ impl RustGenerator {
             HirType::Key { inner, .. } => self.gen_type(inner),
             HirType::ForeignKey { entity, .. } => {
                 if let Some(s) = self.db.structs.get(entity) {
+                    // Look for the field marked as Key
+                    for f in &s.fields {
+                        if let HirType::Key { inner, .. } = &f.ty {
+                            return self.gen_type(inner);
+                        }
+                    }
+                    // Fallback to "id" field if no Key is found
                     for f in &s.fields {
                         if f.name == "id" {
                             return self.gen_type(&f.ty);
