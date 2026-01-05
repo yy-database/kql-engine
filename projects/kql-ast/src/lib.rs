@@ -140,7 +140,7 @@ pub enum Decl {
     Struct(StructDecl),
     Enum(EnumDecl),
     Let(LetDecl),
-    Schema(SchemaDecl),
+    Database(DatabaseDecl),
 }
 
 impl AstNode for Decl {
@@ -149,7 +149,7 @@ impl AstNode for Decl {
             Decl::Struct(d) => d.span,
             Decl::Enum(d) => d.span,
             Decl::Let(d) => d.span,
-            Decl::Schema(d) => d.span,
+            Decl::Database(d) => d.span,
         }
     }
 }
@@ -184,7 +184,8 @@ pub struct LetDecl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SchemaDecl {
+pub struct DatabaseDecl {
+    pub attrs: Vec<Attribute>,
     pub name: Ident,
     pub decls: Vec<Decl>,
     pub span: Span,

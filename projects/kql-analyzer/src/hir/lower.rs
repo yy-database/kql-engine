@@ -17,16 +17,16 @@ impl Lowerer {
     }
 
     pub fn lower_decls(&mut self, decls: Vec<ast::Decl>) -> Result<()> {
-        self.lower_decls_recursive(decls, None)
+        self.lower_decls_recursive(decls, None, None)
     }
 
-    fn lower_decls_recursive(&mut self, decls: Vec<ast::Decl>, schema: Option<String>) -> Result<()> {
+    fn lower_decls_recursive(&mut self, decls: Vec<ast::Decl>, namespace: Option<String>, db_schema: Option<String>) -> Result<()> {
         // First pass: Collect all names to allow forward references
         for decl in &decls {
             match decl {
                 ast::Decl::Struct(s) => {
-                    let full_name = if let Some(schema_name) = &schema {
-                        format!("{}::{}", schema_name, s.name.name)
+                    let full_name = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, s.name.name)
                     } else {
                         s.name.name.clone()
                     };
@@ -35,8 +35,8 @@ impl Lowerer {
                     self.db.id_to_kind.insert(id, HirKind::Struct);
                 }
                 ast::Decl::Enum(e) => {
-                    let full_name = if let Some(schema_name) = &schema {
-                        format!("{}::{}", schema_name, e.name.name)
+                    let full_name = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, e.name.name)
                     } else {
                         e.name.name.clone()
                     };
@@ -45,8 +45,8 @@ impl Lowerer {
                     self.db.id_to_kind.insert(id, HirKind::Enum);
                 }
                 ast::Decl::Let(l) => {
-                    let full_name = if let Some(schema_name) = &schema {
-                        format!("{}::{}", schema_name, l.name.name)
+                    let full_name = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, l.name.name)
                     } else {
                         l.name.name.clone()
                     };
@@ -54,8 +54,28 @@ impl Lowerer {
                     self.db.name_to_id.insert(full_name, id);
                     self.db.id_to_kind.insert(id, HirKind::Let);
                 }
-                ast::Decl::Schema(s) => {
-                    self.lower_decls_recursive(s.decls.clone(), Some(s.name.name.clone()))?;
+                ast::Decl::Database(d) => {
+                    let sub_namespace = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, d.name.name)
+                    } else {
+                        d.name.name.clone()
+                    };
+                    
+                    // Extract @schema from attributes
+                    let mut sub_db_schema = db_schema.clone();
+                    for attr in &d.attrs {
+                        if attr.name.name == "schema" {
+                            if let Some(args) = &attr.args {
+                                if !args.is_empty() {
+                                    if let ast::Expr::Literal(ast::LiteralExpr { kind: ast::LiteralKind::String(s), .. }) = &args[0].value {
+                                        sub_db_schema = Some(s.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    self.lower_decls_recursive(d.decls.clone(), Some(sub_namespace), sub_db_schema)?;
                 }
             }
         }
@@ -64,41 +84,60 @@ impl Lowerer {
         for decl in decls {
             match decl {
                 ast::Decl::Struct(s) => {
-                    let full_name = if let Some(schema_name) = &schema {
-                        format!("{}::{}", schema_name, s.name.name)
+                    let full_name = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, s.name.name)
                     } else {
                         s.name.name.clone()
                     };
-                    let hir_s = self.lower_struct(s, schema.clone(), &full_name)?;
+                    let hir_s = self.lower_struct(s, namespace.clone(), db_schema.clone(), &full_name)?;
                     self.db.structs.insert(hir_s.id, hir_s);
                 }
                 ast::Decl::Enum(e) => {
-                    let full_name = if let Some(schema_name) = &schema {
-                        format!("{}::{}", schema_name, e.name.name)
+                    let full_name = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, e.name.name)
                     } else {
                         e.name.name.clone()
                     };
-                    let hir_e = self.lower_enum(e, schema.clone(), &full_name)?;
+                    let hir_e = self.lower_enum(e, namespace.clone(), db_schema.clone(), &full_name)?;
                     self.db.enums.insert(hir_e.id, hir_e);
                 }
                 ast::Decl::Let(l) => {
-                    let full_name = if let Some(schema_name) = &schema {
-                        format!("{}::{}", schema_name, l.name.name)
+                    let full_name = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, l.name.name)
                     } else {
                         l.name.name.clone()
                     };
-                    let hir_l = self.lower_let(l, schema.clone(), &full_name)?;
+                    let hir_l = self.lower_let(l, namespace.clone(), &full_name)?;
                     self.db.lets.insert(hir_l.id, hir_l);
                 }
-                ast::Decl::Schema(s) => {
-                    self.lower_decls_recursive(s.decls.clone(), Some(s.name.name.clone()))?;
+                ast::Decl::Database(d) => {
+                    let sub_namespace = if let Some(ns) = &namespace {
+                        format!("{}::{}", ns, d.name.name)
+                    } else {
+                        d.name.name.clone()
+                    };
+                    
+                    // Extract @schema from attributes
+                    let mut sub_db_schema = db_schema.clone();
+                    for attr in &d.attrs {
+                        if attr.name.name == "schema" {
+                            if let Some(args) = &attr.args {
+                                if !args.is_empty() {
+                                    if let ast::Expr::Literal(ast::LiteralExpr { kind: ast::LiteralKind::String(s), .. }) = &args[0].value {
+                                        sub_db_schema = Some(s.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    self.lower_decls_recursive(d.decls.clone(), Some(sub_namespace), sub_db_schema)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn lower_struct(&mut self, s: ast::StructDecl, schema: Option<String>, full_name: &str) -> Result<HirStruct> {
+    fn lower_struct(&mut self, s: ast::StructDecl, namespace: Option<String>, db_schema: Option<String>, full_name: &str) -> Result<HirStruct> {
         let id = *self.db.name_to_id.get(full_name).unwrap();
         let attrs = self.lower_attrs(s.attrs)?;
         let mut fields = Vec::new();
@@ -106,7 +145,7 @@ impl Lowerer {
             fields.push(HirField {
                 attrs: self.lower_attrs(f.attrs)?,
                 name: f.name.name,
-                ty: self.lower_type(f.ty, schema.as_deref())?,
+                ty: self.lower_type(f.ty, namespace.as_deref())?,
                 span: f.span,
             });
         }
@@ -114,13 +153,14 @@ impl Lowerer {
             id,
             attrs,
             name: s.name.name,
-            schema,
+            namespace,
+            schema: db_schema,
             fields,
             span: s.span,
         })
     }
 
-    fn lower_enum(&mut self, e: ast::EnumDecl, schema: Option<String>, full_name: &str) -> Result<HirEnum> {
+    fn lower_enum(&mut self, e: ast::EnumDecl, namespace: Option<String>, db_schema: Option<String>, full_name: &str) -> Result<HirEnum> {
         let id = *self.db.name_to_id.get(full_name).unwrap();
         let attrs = self.lower_attrs(e.attrs)?;
         let mut variants = Vec::new();
@@ -131,7 +171,7 @@ impl Lowerer {
                     hir_f_vec.push(HirField {
                         attrs: self.lower_attrs(f.attrs)?,
                         name: f.name.name,
-                        ty: self.lower_type(f.ty, schema.as_deref())?,
+                        ty: self.lower_type(f.ty, namespace.as_deref())?,
                         span: f.span,
                     });
                 }
@@ -150,18 +190,19 @@ impl Lowerer {
             id,
             attrs,
             name: e.name.name,
-            schema,
+            namespace,
+            schema: db_schema,
             variants,
             span: e.span,
         })
     }
 
-    fn lower_let(&mut self, l: ast::LetDecl, _schema: Option<String>, full_name: &str) -> Result<HirLet> {
+    fn lower_let(&mut self, l: ast::LetDecl, namespace: Option<String>, full_name: &str) -> Result<HirLet> {
         let id = *self.db.name_to_id.get(full_name).unwrap();
         let attrs = self.lower_attrs(l.attrs)?;
         let value = self.lower_expr(l.value)?;
         let ty = if let Some(ast_ty) = l.ty {
-            self.lower_type(ast_ty, _schema.as_deref())?
+            self.lower_type(ast_ty, namespace.as_deref())?
         } else {
             value.ty.clone()
         };
@@ -181,6 +222,7 @@ impl Lowerer {
             id,
             attrs,
             name: l.name.name,
+            namespace,
             ty,
             value,
             span: l.span,
@@ -208,21 +250,21 @@ impl Lowerer {
         Ok(hir_attrs)
     }
 
-    fn lower_type(&mut self, ty: ast::Type, current_schema: Option<&str>) -> Result<HirType> {
+    fn lower_type(&mut self, ty: ast::Type, namespace: Option<&str>) -> Result<HirType> {
         match ty {
             ast::Type::Named(n) => {
                 // Special handling for Key<T>
                 if n.name == "Key" {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
-                            let inner = self.lower_type(args[0].clone(), current_schema)?;
+                            let inner = self.lower_type(args[0].clone(), namespace)?;
                             return Ok(HirType::Key {
                                 entity: None,
                                 inner: Box::new(inner),
                             });
                         } else if args.len() == 2 {
-                            let entity_ty = self.lower_type(args[0].clone(), current_schema)?;
-                            let inner = self.lower_type(args[1].clone(), current_schema)?;
+                            let entity_ty = self.lower_type(args[0].clone(), namespace)?;
+                            let inner = self.lower_type(args[1].clone(), namespace)?;
                             let entity = if let HirType::Struct(id) = entity_ty {
                                 Some(id)
                             } else {
@@ -244,71 +286,55 @@ impl Lowerer {
                 if n.name == "List" {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
-                            let inner = self.lower_type(args[0].clone(), current_schema)?;
+                            let inner = self.lower_type(args[0].clone(), namespace)?;
                             return Ok(HirType::List(Box::new(inner)));
                         }
                     }
-                    return Err(KqlError::semantic(
-                        n.span,
-                        "List type must have exactly one generic argument, e.g., List<String>".to_string(),
-                    ));
                 }
 
-                // Special handling for Option<T> as an alternative to T?
-                if n.name == "Option" {
-                    if let Some(args) = n.args {
-                        if args.len() == 1 {
-                            let inner = self.lower_type(args[0].clone(), current_schema)?;
-                            return Ok(HirType::Optional(Box::new(inner)));
-                        }
+                // Resolve type name
+                if let Some(id) = self.db.name_to_id.get(&n.name) {
+                    let kind = self.db.id_to_kind.get(id).unwrap();
+                    return match kind {
+                        HirKind::Struct => Ok(HirType::Struct(*id)),
+                        HirKind::Enum => Ok(HirType::Enum(*id)),
+                        HirKind::Let => Err(KqlError::semantic(n.span, format!("{} is a variable, not a type", n.name))),
+                    };
+                }
+
+                // Try to resolve in current namespace
+                if let Some(ns) = namespace {
+                    let qualified_name = format!("{}::{}", ns, n.name);
+                    if let Some(id) = self.db.name_to_id.get(&qualified_name) {
+                        let kind = self.db.id_to_kind.get(id).unwrap();
+                        return match kind {
+                            HirKind::Struct => Ok(HirType::Struct(*id)),
+                            HirKind::Enum => Ok(HirType::Enum(*id)),
+                            HirKind::Let => Err(KqlError::semantic(n.span, format!("{} is a variable, not a type", qualified_name))),
+                        };
                     }
-                    return Err(KqlError::semantic(
-                        n.span,
-                        "Option type must have exactly one generic argument, e.g., Option<String>".to_string(),
-                    ));
                 }
 
+                // Handle primitive types
                 match n.name.as_str() {
                     "i32" => Ok(HirType::Primitive(PrimitiveType::I32)),
                     "i64" => Ok(HirType::Primitive(PrimitiveType::I64)),
                     "f32" => Ok(HirType::Primitive(PrimitiveType::F32)),
                     "f64" => Ok(HirType::Primitive(PrimitiveType::F64)),
                     "String" => Ok(HirType::Primitive(PrimitiveType::String)),
-                    "bool" => Ok(HirType::Primitive(PrimitiveType::Bool)),
+                    "Bool" | "bool" => Ok(HirType::Primitive(PrimitiveType::Bool)),
                     "DateTime" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
-                    "UUID" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
-                    "d128" => Ok(HirType::Primitive(PrimitiveType::D128)),
-                    _ => {
-                        let id = if let Some(&id) = self.db.name_to_id.get(&n.name) {
-                            Some(id)
-                        } else if let Some(schema) = current_schema {
-                            let qualified = format!("{}::{}", schema, n.name);
-                            self.db.name_to_id.get(&qualified).copied()
-                        } else {
-                            None
-                        };
-
-                        if let Some(id) = id {
-                            match self.db.id_to_kind.get(&id) {
-                                Some(HirKind::Struct) => Ok(HirType::Struct(id)),
-                                Some(HirKind::Enum) => Ok(HirType::Enum(id)),
-                                _ => Err(KqlError::semantic(
-                                    n.span,
-                                    format!("'{}' is not a valid type", n.name),
-                                )),
-                            }
-                        } else {
-                            Err(KqlError::semantic(n.span, format!("Unknown type: {}", n.name)))
-                        }
-                    }
+                    "Uuid" | "UUID" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
+                    "D128" | "d128" => Ok(HirType::Primitive(PrimitiveType::D128)),
+                    _ => Err(KqlError::semantic(n.span, format!("Unknown type: {}", n.name))),
                 }
             }
             ast::Type::List(l) => {
-                let inner = self.lower_type(*l.inner, current_schema)?;
+                let inner = self.lower_type(*l.inner, namespace)?;
                 Ok(HirType::List(Box::new(inner)))
             }
             ast::Type::Optional(o) => {
-                let inner = self.lower_type(*o.inner, current_schema)?;
+                let inner = self.lower_type(*o.inner, namespace)?;
                 Ok(HirType::Optional(Box::new(inner)))
             }
         }

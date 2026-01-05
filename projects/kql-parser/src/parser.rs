@@ -127,15 +127,10 @@ impl<'a> Parser<'a> {
             TokenKind::Struct => self.parse_struct_declaration(attrs).map(Decl::Struct),
             TokenKind::Enum => self.parse_enum_declaration(attrs).map(Decl::Enum),
             TokenKind::Let => self.parse_let_declaration(attrs).map(Decl::Let),
-            TokenKind::Schema => {
-                if !attrs.is_empty() {
-                    return Err(KqlError::parse(attrs[0].span.clone(), "Attributes are not supported on schema declarations".to_string()));
-                }
-                self.parse_schema_declaration().map(Decl::Schema)
-            }
+            TokenKind::Database => self.parse_database_declaration(attrs).map(Decl::Database),
             _ => Err(KqlError::parse(
                 self.curr.span.clone(),
-                format!("Expected declaration (struct, enum, let, schema), found {:?}", self.curr.kind),
+                format!("Expected declaration (struct, enum, let, database), found {:?}", self.curr.kind),
             )),
         }
     }
@@ -235,8 +230,8 @@ impl<'a> Parser<'a> {
         Ok(LetDecl { attrs, name, ty, value, span })
     }
 
-    fn parse_schema_declaration(&mut self) -> Result<SchemaDecl> {
-        let start_span = self.expect(TokenKind::Schema)?.span;
+    fn parse_database_declaration(&mut self, attrs: Vec<Attribute>) -> Result<DatabaseDecl> {
+        let start_span = self.expect(TokenKind::Database)?.span;
         let name = self.parse_ident()?;
         self.expect(TokenKind::LBrace)?;
 
@@ -246,13 +241,15 @@ impl<'a> Parser<'a> {
         }
 
         let end_span = self.expect(TokenKind::RBrace)?.span;
-        Ok(SchemaDecl {
+        let span = Span {
+            start: attrs.first().map(|a| a.span.start).unwrap_or(start_span.start),
+            end: end_span.end,
+        };
+        Ok(DatabaseDecl {
+            attrs,
             name,
             decls,
-            span: Span {
-                start: start_span.start,
-                end: end_span.end,
-            },
+            span,
         })
     }
 
@@ -459,7 +456,7 @@ impl<'a> Parser<'a> {
     fn is_keyword(&self, kind: &TokenKind) -> bool {
         matches!(
             kind,
-            TokenKind::Struct | TokenKind::Enum | TokenKind::Let | TokenKind::Schema
+            TokenKind::Struct | TokenKind::Enum | TokenKind::Let | TokenKind::Database
         )
     }
 }

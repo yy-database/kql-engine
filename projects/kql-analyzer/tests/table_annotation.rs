@@ -95,3 +95,39 @@ fn test_table_schema_named_arg() {
     let sql = statements[0].to_string();
     assert!(sql.contains("CREATE TABLE IF NOT EXISTS auth.users"));
 }
+
+#[test]
+fn test_database_block_schema() {
+    let input = r#"
+        @schema("auth")
+        database Auth {
+            @table("users")
+            struct User {
+                id: Key<i32>,
+                name: String,
+            }
+        }
+    "#;
+
+    let mut parser = Parser::new(input);
+    let mut ast = Vec::new();
+    while !parser.is_eof() {
+        ast.push(parser.parse_declaration().unwrap());
+    }
+
+    let mut lowerer = Lowerer::new();
+    lowerer.lower_decls(ast).unwrap();
+    let hir_db = lowerer.db;
+
+    let mut mir_lowerer = MirLowerer::new(hir_db);
+    let mir_db = mir_lowerer.lower().unwrap();
+
+    let user_table = mir_db.tables.get("Auth::User").expect("Table 'Auth::User' not found in MIR");
+    assert_eq!(user_table.name, "users");
+    assert_eq!(user_table.schema, Some("auth".to_string()));
+
+    let sql_gen = SqlGenerator::new(mir_db, SqlDialect::Postgres);
+    let statements = sql_gen.generate_ddl();
+    let sql = statements[0].to_string();
+    assert!(sql.contains("CREATE TABLE IF NOT EXISTS auth.users"));
+}

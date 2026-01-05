@@ -27,7 +27,8 @@ impl Transpiler {
         for (schema_name, statements) in schemas {
             let mut current_kql = String::new();
             if let Some(s) = &schema_name {
-                current_kql.push_str(&format!("schema {} {{\n", to_pascal_case(s)));
+                current_kql.push_str(&format!("@schema(\"{}\")\n", s));
+                current_kql.push_str(&format!("database {} {{\n", to_pascal_case(s)));
             }
 
             for statement in statements {
@@ -167,7 +168,7 @@ mod tests {
         let kql = Transpiler::transpile(sql).unwrap();
         assert_eq!(
             kql,
-            "schema PgCatalog {\n    @table(schema: \"pg_catalog\", \"pg_proc\")\n    struct PgProc {\n        id: Key<i32>,\n        name: String?,\n    }\n}"
+            "@schema(\"pg_catalog\")\ndatabase PgCatalog {\n    @table(schema: \"pg_catalog\", \"pg_proc\")\n    struct PgProc {\n        id: Key<i32>,\n        name: String?,\n    }\n}"
         );
     }
 }

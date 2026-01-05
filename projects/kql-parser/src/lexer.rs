@@ -16,7 +16,7 @@ pub enum TokenKind {
     Case,
     Lambda,
     Type,
-    Schema,
+    Database,
 
     // Symbols
     LBrace,      // {
@@ -132,7 +132,7 @@ impl<'a> Lexer<'a> {
                         "case" => TokenKind::Case,
                         "lambda" => TokenKind::Lambda,
                         "type" => TokenKind::Type,
-                        "schema" => TokenKind::Schema,
+                        "database" => TokenKind::Database,
                         "true" => TokenKind::Boolean,
                         "false" => TokenKind::Boolean,
                         _ => TokenKind::Ident,
