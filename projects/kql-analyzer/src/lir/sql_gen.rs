@@ -3,9 +3,11 @@ use crate::mir::{Column, ColumnType, MirProgram, Table, ReferenceAction};
 use sqlparser::ast::{
     CharacterLength, ColumnDef, ColumnOption, ColumnOptionDef, DataType, Ident, ObjectName,
     ReferentialAction, Statement, TableConstraint, Query, SetExpr, Values, Expr, Value,
-    Assignment,
+    Assignment, Select, SelectItem, TableWithJoins, TableFactor, Join, JoinOperator, JoinConstraint,
+    AlterTableOperation,
 };
 use sqlparser::tokenizer::Token;
+use crate::migration::MigrationStep;
 
 pub struct SqlGenerator {
     pub mir_db: MirProgram,
@@ -27,6 +29,167 @@ impl SqlGenerator {
 
     pub fn generate_ddl_sql(&self) -> Vec<String> {
         self.generate_ddl()
+            .into_iter()
+            .map(|stmt| format!("{};", stmt))
+            .collect()
+    }
+
+    pub fn generate_migration(&self, steps: Vec<MigrationStep>) -> Vec<Statement> {
+        let mut statements = Vec::new();
+        for step in steps {
+            match step {
+                MigrationStep::CreateTable(table) => {
+                    statements.push(self.generate_create_table(&table));
+                }
+                MigrationStep::DropTable(name) => {
+                    // We need a dummy table object to get the name with schema if needed
+                    // Or we just use the name directly. 
+                    // MigrationStep should probably include schema info if possible.
+                    // For now, assume it's in the same schema as others or use simple name.
+                    statements.push(Statement::Drop {
+                        object_type: sqlparser::ast::ObjectType::Table,
+                        if_exists: true,
+                        names: vec![ObjectName(vec![Ident::new(name)])],
+                        cascade: false,
+                        restrict: false,
+                        purge: false,
+                        temporary: false,
+                    });
+                }
+                MigrationStep::AddColumn { table_name, column } => {
+                    statements.push(Statement::AlterTable {
+                        name: ObjectName(vec![Ident::new(table_name)]),
+                        if_exists: true,
+                        only: false,
+                        operations: vec![AlterTableOperation::AddColumn {
+                            column_keyword: true,
+                            if_not_exists: true,
+                            column_def: self.generate_column_def(&column),
+                        }],
+                    });
+                }
+                MigrationStep::DropColumn { table_name, column_name } => {
+                    statements.push(Statement::AlterTable {
+                        name: ObjectName(vec![Ident::new(table_name)]),
+                        if_exists: true,
+                        only: false,
+                        operations: vec![AlterTableOperation::DropColumn {
+                            column_name: Ident::new(column_name),
+                            if_exists: true,
+                            cascade: false,
+                        }],
+                    });
+                }
+                MigrationStep::AlterColumn { table_name, old_column: _, new_column } => {
+                    // This is dialect specific. For now, a simple version:
+                    let column_name = Ident::new(new_column.name.clone());
+                    let data_type = self.generate_column_def(&new_column).data_type;
+                    statements.push(Statement::AlterTable {
+                        name: ObjectName(vec![Ident::new(table_name)]),
+                        if_exists: true,
+                        only: false,
+                        operations: vec![AlterTableOperation::AlterColumn {
+                            column_name,
+                            op: sqlparser::ast::AlterColumnOperation::SetDataType {
+                                data_type,
+                                using: None,
+                            },
+                        }],
+                    });
+                }
+                MigrationStep::RenameTable { old_name, new_name } => {
+                    statements.push(Statement::AlterTable {
+                        name: ObjectName(vec![Ident::new(old_name)]),
+                        if_exists: true,
+                        only: false,
+                        operations: vec![AlterTableOperation::RenameTable {
+                            table_name: ObjectName(vec![Ident::new(new_name)]),
+                        }],
+                    });
+                }
+                MigrationStep::RenameColumn { table_name, old_name, new_name } => {
+                    statements.push(Statement::AlterTable {
+                        name: ObjectName(vec![Ident::new(table_name)]),
+                        if_exists: true,
+                        only: false,
+                        operations: vec![AlterTableOperation::RenameColumn {
+                            old_column_name: Ident::new(old_name),
+                            new_column_name: Ident::new(new_name),
+                        }],
+                    });
+                }
+                MigrationStep::AddIndex { table_name, index } => {
+                    statements.push(Statement::CreateIndex {
+                        name: Some(ObjectName(vec![Ident::new(&index.name)])),
+                        table_name: ObjectName(vec![Ident::new(table_name)]),
+                        columns: index.columns.iter().map(|c| sqlparser::ast::OrderByExpr {
+                            expr: Expr::Identifier(Ident::new(c)),
+                            asc: None,
+                            nulls_first: None,
+                        }).collect(),
+                        unique: index.unique,
+                        if_not_exists: true,
+                        using: None,
+                        include: vec![],
+                        nulls_distinct: None,
+                        predicate: None,
+                        concurrently: false,
+                    });
+                }
+                MigrationStep::DropIndex { table_name: _, index_name } => {
+                    statements.push(Statement::Drop {
+                        object_type: sqlparser::ast::ObjectType::Index,
+                        if_exists: true,
+                        names: vec![ObjectName(vec![Ident::new(index_name)])],
+                        cascade: false,
+                        restrict: false,
+                        purge: false,
+                        temporary: false,
+                    });
+                }
+                MigrationStep::AddForeignKey { table_name, foreign_key } => {
+                    let mut foreign_table_parts = Vec::new();
+                    if let Some(schema) = &foreign_key.referenced_schema {
+                        if !(self.dialect == SqlDialect::MySql || self.dialect == SqlDialect::Sqlite) || schema != "public" {
+                            foreign_table_parts.push(Ident::new(schema));
+                        }
+                    }
+                    foreign_table_parts.push(Ident::new(&foreign_key.referenced_table));
+
+                    statements.push(Statement::AlterTable {
+                        name: ObjectName(vec![Ident::new(table_name)]),
+                        if_exists: true,
+                        only: false,
+                        operations: vec![AlterTableOperation::AddConstraint(TableConstraint::ForeignKey {
+                            name: Some(Ident::new(&foreign_key.name)),
+                            columns: foreign_key.columns.iter().map(|c| Ident::new(c)).collect(),
+                            foreign_table: ObjectName(foreign_table_parts),
+                            referred_columns: foreign_key.referenced_columns.iter().map(|c| Ident::new(c)).collect(),
+                            on_delete: foreign_key.on_delete.map(|a| self.map_reference_action(a)),
+                            on_update: foreign_key.on_update.map(|a| self.map_reference_action(a)),
+                            characteristics: None,
+                        })],
+                    });
+                }
+                MigrationStep::DropForeignKey { table_name, foreign_key_name } => {
+                    statements.push(Statement::AlterTable {
+                        name: ObjectName(vec![Ident::new(table_name)]),
+                        if_exists: true,
+                        only: false,
+                        operations: vec![AlterTableOperation::DropConstraint {
+                            name: Ident::new(foreign_key_name),
+                            if_exists: true,
+                            cascade: false,
+                        }],
+                    });
+                }
+            }
+        }
+        statements
+    }
+
+    pub fn generate_migration_sql(&self, steps: Vec<MigrationStep>) -> Vec<String> {
+        self.generate_migration(steps)
             .into_iter()
             .map(|stmt| format!("{};", stmt))
             .collect()
@@ -167,6 +330,91 @@ impl SqlGenerator {
             order_by: vec![],
             limit: None,
         })
+    }
+
+    pub fn generate_select(&self, table: &Table, relations: &[&str]) -> Statement {
+        let table_name = self.get_table_object_name(table);
+        let table_alias = table.name.clone();
+
+        let mut joins = Vec::new();
+        let projection = vec![SelectItem::Wildcard(
+            sqlparser::ast::WildcardAdditionalOptions::default(),
+        )];
+
+        for rel_name in relations {
+            if let Some(rel) = table.relations.iter().find(|r| &r.name == rel_name) {
+                // Find target table in MIR
+                if let Some(target_table) = self.mir_db.tables.values().find(|t| t.name == rel.target_table) {
+                    let target_table_name = self.get_table_object_name(target_table);
+                    let target_alias = rel.name.clone();
+
+                    joins.push(Join {
+                        relation: TableFactor::Table {
+                            name: target_table_name,
+                            alias: Some(sqlparser::ast::TableAlias {
+                                name: Ident::new(&target_alias),
+                                columns: vec![],
+                            }),
+                            args: None,
+                            with_hints: vec![],
+                            version: None,
+                            partitions: vec![],
+                        },
+                        join_operator: JoinOperator::LeftOuter(JoinConstraint::On(Expr::BinaryOp {
+                            left: Box::new(Expr::CompoundIdentifier(vec![
+                                Ident::new(&table_alias),
+                                Ident::new(&rel.foreign_key_column),
+                            ])),
+                            op: sqlparser::ast::BinaryOperator::Eq,
+                            right: Box::new(Expr::CompoundIdentifier(vec![
+                                Ident::new(&target_alias),
+                                Ident::new(&rel.target_column),
+                            ])),
+                        })),
+                    });
+                }
+            }
+        }
+
+        Statement::Query(Box::new(Query {
+            with: None,
+            body: Box::new(SetExpr::Select(Box::new(Select {
+                distinct: None,
+                top: None,
+                projection,
+                into: None,
+                from: vec![TableWithJoins {
+                    relation: TableFactor::Table {
+                        name: table_name,
+                        alias: Some(sqlparser::ast::TableAlias {
+                            name: Ident::new(&table_alias),
+                            columns: vec![],
+                        }),
+                        args: None,
+                        with_hints: vec![],
+                        version: None,
+                        partitions: vec![],
+                    },
+                    joins,
+                }],
+                lateral_views: vec![],
+                selection: None,
+                group_by: sqlparser::ast::GroupByExpr::Expressions(vec![]),
+                cluster_by: vec![],
+                distribute_by: vec![],
+                sort_by: vec![],
+                having: None,
+                named_window: vec![],
+                qualify: None,
+            }))),
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            fetch: None,
+            locks: vec![],
+            for_clause: None,
+            limit_by: vec![],
+        }))
     }
 
     fn get_table_object_name(&self, table: &Table) -> ObjectName {

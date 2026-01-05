@@ -5,11 +5,12 @@ use kql_types::{KqlError, Result, Span};
 pub struct Lowerer {
     pub db: HirProgram,
     pub errors: Vec<KqlError>,
+    pub current_struct_id: Option<HirId>,
 }
 
 impl Lowerer {
     pub fn new() -> Self {
-        Self { db: HirProgram::default(), errors: Vec::new() }
+        Self { db: HirProgram::default(), errors: Vec::new(), current_struct_id: None }
     }
 
     pub fn lower_program(&mut self, ast_db: &ast::Database) -> Result<HirProgram> {
@@ -183,16 +184,51 @@ impl Lowerer {
             }
         }
 
+        let old_struct_id = self.current_struct_id;
+        self.current_struct_id = Some(id);
+
         let mut fields = Vec::new();
         for f in s.fields {
             let f_attrs = match self.lower_attrs(f.attrs) {
                 Ok(a) => a,
                 Err(e) => { self.errors.push(e); Vec::new() }
             };
-            let f_ty = match self.lower_type(f.ty, namespace.as_deref()) {
+            let mut f_ty = match self.lower_type(f.ty, namespace.as_deref()) {
                 Ok(t) => t,
                 Err(e) => { self.errors.push(e); HirType::Unknown }
             };
+
+            // Check for @relation
+            let mut is_relation = false;
+            for attr in &f_attrs {
+                if attr.name == "relation" {
+                    is_relation = true;
+                    break;
+                }
+            }
+
+            if is_relation {
+                match &f_ty {
+                    HirType::Struct(target_id) => {
+                        f_ty = HirType::Relation { target: *target_id, is_list: false };
+                    }
+                    HirType::List(inner) => {
+                        if let HirType::Struct(target_id) = inner.as_ref() {
+                            f_ty = HirType::Relation { target: *target_id, is_list: true };
+                        }
+                    }
+                    HirType::Optional(inner) => {
+                        if let HirType::Struct(target_id) = inner.as_ref() {
+                            f_ty = HirType::Relation { target: *target_id, is_list: false };
+                        }
+                    }
+                    _ => {
+                        // Not a struct or list of structs, but has @relation? 
+                        // Error should probably be handled here or later.
+                    }
+                }
+            }
+
             fields.push(HirField {
                 attrs: f_attrs,
                 name: f.name.name,
@@ -200,6 +236,7 @@ impl Lowerer {
                 span: f.span,
             });
         }
+        self.current_struct_id = old_struct_id;
         Ok(HirStruct {
             id,
             attrs,
@@ -425,8 +462,8 @@ impl Lowerer {
                     "i64" => Ok(HirType::Primitive(PrimitiveType::I64)),
                     "f32" => Ok(HirType::Primitive(PrimitiveType::F32)),
                     "f64" => Ok(HirType::Primitive(PrimitiveType::F64)),
-                    "String" => Ok(HirType::Primitive(PrimitiveType::String)),
-                    "Bool" | "bool" => Ok(HirType::Primitive(PrimitiveType::Bool)),
+                    "String" | "string" => Ok(HirType::Primitive(PrimitiveType::String)),
+                    "Bool" | "bool" | "boolean" => Ok(HirType::Primitive(PrimitiveType::Bool)),
                     "DateTime" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
                     "Uuid" | "UUID" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
                     "D128" | "d128" => Ok(HirType::Primitive(PrimitiveType::D128)),
@@ -475,6 +512,27 @@ impl Lowerer {
                 Ok(HirExpr { kind, ty, span: l.span })
             }
             ast::Expr::Variable(v) => {
+                // 1. Check current struct fields if in struct context
+                if let Some(struct_id) = self.current_struct_id {
+                    if let Some(s) = self.db.structs.get(&struct_id) {
+                        if let Some(f) = s.fields.iter().find(|f| f.name == v.name) {
+                            return Ok(HirExpr {
+                                kind: HirExprKind::Member {
+                                    object: Box::new(HirExpr {
+                                        kind: HirExprKind::Symbol("this".to_string()),
+                                        ty: HirType::Struct(struct_id),
+                                        span: v.span,
+                                    }),
+                                    member: v.name.clone(),
+                                },
+                                ty: f.ty.clone(),
+                                span: v.span,
+                            });
+                        }
+                    }
+                }
+
+                // 2. Check global scope
                 if let Some(&id) = self.db.name_to_id.get(&v.name) {
                     let ty = if let Some(l) = self.db.lets.get(&id) {
                         l.ty.clone()
@@ -601,7 +659,18 @@ impl Lowerer {
                         }
                         HirType::Enum(*id)
                     }
-                    _ => HirType::Unknown,
+                    _ => {
+                        // Check for built-in functions
+                        if let HirExprKind::Symbol(name) = &func.kind {
+                            if let Some(ret_ty) = self.check_builtin_function(name, &args) {
+                                ret_ty
+                            } else {
+                                HirType::Unknown
+                            }
+                        } else {
+                            HirType::Unknown
+                        }
+                    }
                 };
                 
                 Ok(HirExpr { kind: HirExprKind::Call { func: Box::new(func), args }, ty, span: c.span })
@@ -651,6 +720,21 @@ impl Lowerer {
                             }
                         }
                     }
+                    HirType::Relation { target, is_list } => {
+                        if let Some(s) = self.db.structs.get(target) {
+                            if let Some(f) = s.fields.iter().find(|f| f.name == member_name) {
+                                ty = f.ty.clone();
+                                if *is_list {
+                                    ty = HirType::List(Box::new(ty));
+                                }
+                            } else {
+                                self.errors.push(KqlError::semantic(
+                                    m.member.span,
+                                    format!("Struct '{}' has no field '{}'", s.name, member_name),
+                                ));
+                            }
+                        }
+                    }
                     HirType::Unknown => {}
                     _ => {
                         self.errors.push(KqlError::semantic(
@@ -669,6 +753,54 @@ impl Lowerer {
                     span: m.span,
                 })
             }
+        }
+    }
+
+    fn check_builtin_function(&self, name: &str, args: &[HirExpr]) -> Option<HirType> {
+        match name {
+            "now" | "current_timestamp" => {
+                if args.is_empty() {
+                    Some(HirType::Primitive(PrimitiveType::DateTime))
+                } else {
+                    None
+                }
+            }
+            "uuid" | "gen_random_uuid" => {
+                if args.is_empty() {
+                    Some(HirType::Primitive(PrimitiveType::Uuid))
+                } else {
+                    None
+                }
+            }
+            "count" => Some(HirType::Primitive(PrimitiveType::I64)),
+            "sum" | "avg" | "min" | "max" => {
+                if args.len() == 1 {
+                    let arg_ty = &args[0].ty;
+                    if matches!(arg_ty, HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128)) {
+                        Some(arg_ty.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            "upper" | "lower" | "trim" | "concat" => {
+                Some(HirType::Primitive(PrimitiveType::String))
+            }
+            "abs" => {
+                if args.len() == 1 {
+                    let arg_ty = &args[0].ty;
+                    if matches!(arg_ty, HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128)) {
+                        Some(arg_ty.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
         }
     }
 
@@ -806,13 +938,39 @@ impl Lowerer {
                     (PrimitiveType::F64, PrimitiveType::F64) => Some(HirType::Primitive(PrimitiveType::F64)),
                     (PrimitiveType::D128, PrimitiveType::D128) => Some(HirType::Primitive(PrimitiveType::D128)),
 
-                    // Promotion
-                    (PrimitiveType::I32, PrimitiveType::I64) | (PrimitiveType::I64, PrimitiveType::I32) => Some(HirType::Primitive(PrimitiveType::I64)),
-                    (PrimitiveType::I32, PrimitiveType::F32) | (PrimitiveType::F32, PrimitiveType::I32) => Some(HirType::Primitive(PrimitiveType::F32)),
-                    (PrimitiveType::I32, PrimitiveType::F64) | (PrimitiveType::F64, PrimitiveType::I32) => Some(HirType::Primitive(PrimitiveType::F64)),
-                    (PrimitiveType::I64, PrimitiveType::F32) | (PrimitiveType::F32, PrimitiveType::I64) => Some(HirType::Primitive(PrimitiveType::F32)), // Maybe F64?
-                    (PrimitiveType::I64, PrimitiveType::F64) | (PrimitiveType::F64, PrimitiveType::I64) => Some(HirType::Primitive(PrimitiveType::F64)),
-                    (PrimitiveType::F32, PrimitiveType::F64) | (PrimitiveType::F64, PrimitiveType::F32) => Some(HirType::Primitive(PrimitiveType::F64)),
+                    // Integer promotion
+                    (PrimitiveType::I32, PrimitiveType::I64) | (PrimitiveType::I64, PrimitiveType::I32) => {
+                        Some(HirType::Primitive(PrimitiveType::I64))
+                    }
+
+                    // Float promotion
+                    (PrimitiveType::F32, PrimitiveType::F64) | (PrimitiveType::F64, PrimitiveType::F32) => {
+                        Some(HirType::Primitive(PrimitiveType::F64))
+                    }
+
+                    // Integer to Float
+                    (PrimitiveType::I32, PrimitiveType::F32) | (PrimitiveType::F32, PrimitiveType::I32) => {
+                        Some(HirType::Primitive(PrimitiveType::F32))
+                    }
+                    (PrimitiveType::I32, PrimitiveType::F64) | (PrimitiveType::F64, PrimitiveType::I32) => {
+                        Some(HirType::Primitive(PrimitiveType::F64))
+                    }
+                    (PrimitiveType::I64, PrimitiveType::F32) | (PrimitiveType::F32, PrimitiveType::I64) => {
+                        Some(HirType::Primitive(PrimitiveType::F32))
+                    }
+                    (PrimitiveType::I64, PrimitiveType::F64) | (PrimitiveType::F64, PrimitiveType::I64) => {
+                        Some(HirType::Primitive(PrimitiveType::F64))
+                    }
+
+                    // D128 promotion (always stays D128 if one is D128)
+                    (PrimitiveType::D128, _) | (_, PrimitiveType::D128) => {
+                        if matches!(p1, PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128) &&
+                           matches!(p2, PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128) {
+                            Some(HirType::Primitive(PrimitiveType::D128))
+                        } else {
+                            None
+                        }
+                    }
 
                     _ => None,
                 }

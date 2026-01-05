@@ -141,85 +141,74 @@ impl MirLowerer {
             let mut columns = Vec::new();
             let mut relations_list = Vec::new();
             for f in &s.fields {
-                // Check if it's a virtual relation field (has @relation and refers to a struct)
-                let mut is_virtual = false;
-                match &f.ty {
-                    HirType::Struct(_) | HirType::Optional(_) | HirType::List(_) => {
-                        for attr in &f.attrs {
-                            if attr.name == "relation" {
-                                is_virtual = true;
-                                break;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+                if matches!(f.ty, HirType::Relation { .. }) {
+                     // Virtual relation fields for @relation
+                     if let HirType::Relation { target, .. } = &f.ty {
+                         if let Some(target_struct) = self.hir_db.structs.get(target) {
+                             let mut foreign_key_column = None;
+                             let mut target_table = Some(to_snake_case(&target_struct.name));
+                             let mut target_column = Some("id".to_string());
 
-                if is_virtual {
-                    let mut foreign_key_column = None;
-                    let mut target_table = None;
-                    let mut target_column = Some("id".to_string());
+                             for attr in &f.attrs {
+                                 if attr.name == "relation" {
+                                     for arg in &attr.args {
+                                         match arg.name.as_deref() {
+                                             Some("foreign_key") => {
+                                                 if let HirExprKind::Literal(HirLiteral::String(col)) = &arg.value.kind {
+                                                     foreign_key_column = Some(col.clone());
+                                                 } else if let HirExprKind::Symbol(col) = &arg.value.kind {
+                                                     foreign_key_column = Some(col.clone());
+                                                 }
+                                             }
+                                             Some("target") => {
+                                                 if let HirExprKind::Literal(HirLiteral::String(t)) = &arg.value.kind {
+                                                     target_table = Some(t.clone());
+                                                 } else if let HirExprKind::Symbol(t) = &arg.value.kind {
+                                                     target_table = Some(t.clone());
+                                                 }
+                                             }
+                                             Some("references") => {
+                                                 if let HirExprKind::Literal(HirLiteral::String(col)) = &arg.value.kind {
+                                                     target_column = Some(col.clone());
+                                                 } else if let HirExprKind::Symbol(col) = &arg.value.kind {
+                                                     target_column = Some(col.clone());
+                                                 }
+                                             }
+                                             _ => {}
+                                         }
+                                     }
+                                 }
+                             }
 
-                    for attr in &f.attrs {
-                        if attr.name == "relation" {
-                            for arg in &attr.args {
-                                match arg.name.as_deref() {
-                                    Some("foreign_key") => {
-                                        if let HirExprKind::Literal(HirLiteral::String(col)) = &arg.value.kind {
-                                            foreign_key_column = Some(col.clone());
-                                        } else if let HirExprKind::Symbol(col) = &arg.value.kind {
-                                            foreign_key_column = Some(col.clone());
-                                        }
-                                    }
-                                    Some("target") => {
-                                        if let HirExprKind::Literal(HirLiteral::String(t)) = &arg.value.kind {
-                                            target_table = Some(t.clone());
-                                        } else if let HirExprKind::Symbol(t) = &arg.value.kind {
-                                            target_table = Some(t.clone());
-                                        }
-                                    }
-                                    Some("references") => {
-                                        if let HirExprKind::Literal(HirLiteral::String(col)) = &arg.value.kind {
-                                            target_column = Some(col.clone());
-                                        } else if let HirExprKind::Symbol(col) = &arg.value.kind {
-                                            target_column = Some(col.clone());
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
+                             let fk_col = foreign_key_column.unwrap_or_else(|| {
+                                 // Try to find a matching foreign key in the current table
+                                 for f2 in &s.fields {
+                                     if let HirType::ForeignKey { entity, .. } = &f2.ty {
+                                         if entity == target {
+                                             return f2.name.clone();
+                                         }
+                                     }
+                                     if let HirType::Key { entity: Some(ent), .. } = &f2.ty {
+                                         if ent == target {
+                                             return f2.name.clone();
+                                         }
+                                     }
+                                 }
+                                 "id".to_string() // Fallback
+                             });
 
-                    if let Some(fk_col) = foreign_key_column {
-                        let target_table = target_table.unwrap_or_else(|| {
-                            let mut current_ty = &f.ty;
-                            loop {
-                                match current_ty {
-                                    HirType::Optional(inner) => current_ty = inner,
-                                    HirType::List(inner) => current_ty = inner,
-                                    _ => break,
-                                }
-                            }
-                            if let HirType::Struct(id) = current_ty {
-                                if let Some(target_struct) = self.hir_db.structs.get(id) {
-                                    return to_snake_case(&target_struct.name);
-                                }
-                            }
-                            "unknown".to_string()
-                        });
+                             relations_list.push(Relation {
+                                 name: f.name.clone(),
+                                 foreign_key_column: fk_col,
+                                 target_table: target_table.unwrap_or_else(|| "unknown".to_string()),
+                                 target_column: target_column.unwrap_or_else(|| "id".to_string()),
+                             });
+                         }
+                     }
+                     continue;
+                 }
 
-                        relations_list.push(Relation {
-                            name: f.name.clone(),
-                            foreign_key_column: fk_col,
-                            target_table,
-                            target_column: target_column.unwrap_or_else(|| "id".to_string()),
-                        });
-                    }
-                    continue;
-                }
-
-                let (column_type, is_optional) = self.lower_type_with_nullability(&f.ty)?;
+                 let (column_type, is_optional) = self.lower_type_with_nullability(&f.ty)?;
                 let mut nullable = is_optional;
                 let mut auto_increment = false;
                 let mut default = None;
@@ -534,6 +523,7 @@ impl MirLowerer {
             HirType::List(_) => Ok(ColumnType::Json),
             HirType::Optional(inner) => self.lower_type(inner),
             HirType::ForeignKey { entity, .. } => self.get_pk_type(entity),
+            HirType::Relation { .. } => Ok(ColumnType::Json), // Should be filtered out in higher level
             HirType::Key { entity, inner } => {
                 let actual_entity = entity.or_else(|| {
                     if let HirType::Struct(id) = inner.as_ref() {

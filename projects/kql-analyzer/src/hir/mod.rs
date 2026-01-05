@@ -23,6 +23,10 @@ pub enum HirType {
         name: Option<String>,
         entity: HirId,
     },
+    Relation {
+        target: HirId,
+        is_list: bool,
+    },
     Null,
     Unknown,
 }
