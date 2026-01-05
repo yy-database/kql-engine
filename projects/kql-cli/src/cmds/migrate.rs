@@ -32,7 +32,7 @@ impl MigrateArgs {
 
         // 2. HIR Lowering
         let mut lowerer = Lowerer::new();
-        let hir_db = lowerer.lower_database(&ast)?;
+        let hir_db = lowerer.lower_program(&ast)?;
 
         // 3. MIR Lowering
         let mut mir_gen = MirLowerer::new(hir_db);

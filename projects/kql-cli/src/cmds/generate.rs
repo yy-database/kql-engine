@@ -26,7 +26,7 @@ impl GenerateArgs {
         let ast = parser.parse()?;
         
         let mut lowerer = Lowerer::new();
-        let hir = lowerer.lower_database(&ast)?;
+        let hir = lowerer.lower_program(&ast)?;
         
         if self.lang == "rust" {
             let generator = RustGenerator::new(hir);

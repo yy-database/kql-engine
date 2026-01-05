@@ -160,7 +160,7 @@ pub struct HirLet {
 
 #[derive(Debug, Default, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct HirDatabase {
+pub struct HirProgram {
     pub structs: IndexMap<HirId, HirStruct>,
     pub enums: IndexMap<HirId, HirEnum>,
     pub lets: IndexMap<HirId, HirLet>,
@@ -177,7 +177,7 @@ pub enum HirKind {
     Let,
 }
 
-impl HirDatabase {
+impl HirProgram {
     pub fn alloc_id(&mut self) -> HirId {
         let id = HirId(self.next_id);
         self.next_id += 1;

@@ -1,11 +1,11 @@
-use crate::hir::{HirDatabase, HirStruct, HirEnum, HirType, PrimitiveType};
+use crate::hir::{HirProgram, HirStruct, HirEnum, HirType, PrimitiveType};
 
 pub struct RustGenerator {
-    pub db: HirDatabase,
+    pub db: HirProgram,
 }
 
 impl RustGenerator {
-    pub fn new(db: HirDatabase) -> Self {
+    pub fn new(db: HirProgram) -> Self {
         Self { db }
     }
 

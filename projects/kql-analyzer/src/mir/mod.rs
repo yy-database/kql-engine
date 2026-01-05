@@ -3,11 +3,11 @@ use indexmap::IndexMap;
 pub mod mir_gen;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MirDatabase {
+pub struct MirProgram {
     pub tables: IndexMap<String, Table>,
 }
 
-impl Default for MirDatabase {
+impl Default for MirProgram {
     fn default() -> Self {
         Self {
             tables: IndexMap::new(),

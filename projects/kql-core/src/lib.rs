@@ -1,14 +1,14 @@
-use kql_analyzer::hir::{HirDatabase, lower::Lowerer};
+use kql_analyzer::hir::{HirProgram, lower::Lowerer};
 use kql_parser::Parser;
 use kql_types::Result;
 
 pub struct Compiler {
-    pub db: HirDatabase,
+    pub db: HirProgram,
 }
 
 impl Compiler {
     pub fn new() -> Self {
-        Self { db: HirDatabase::default() }
+        Self { db: HirProgram::default() }
     }
 
     pub fn compile(&mut self, source: &str) -> Result<()> {

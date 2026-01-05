@@ -67,7 +67,19 @@ impl<'a> Parser<'a> {
         let mut decls = Vec::new();
         let start_pos = self.curr.span.start;
         while !self.is_eof() {
-            decls.push(self.parse_declaration()?);
+            let decl = self.parse_declaration()?;
+            if let Decl::Namespace(ref ns) = decl {
+                if !ns.is_block {
+                    // This is a top-level namespace. It consumes all subsequent declarations.
+                    let mut ns = ns.clone();
+                    while !self.is_eof() {
+                        ns.decls.push(self.parse_declaration()?);
+                    }
+                    decls.push(Decl::Namespace(ns));
+                    break;
+                }
+            }
+            decls.push(decl);
         }
         let end_pos = self.prev.span.end;
         Ok(Database {
@@ -127,10 +139,10 @@ impl<'a> Parser<'a> {
             TokenKind::Struct => self.parse_struct_declaration(attrs).map(Decl::Struct),
             TokenKind::Enum => self.parse_enum_declaration(attrs).map(Decl::Enum),
             TokenKind::Let => self.parse_let_declaration(attrs).map(Decl::Let),
-            TokenKind::Database => self.parse_database_declaration(attrs).map(Decl::Database),
+            TokenKind::Namespace => self.parse_namespace_declaration(attrs).map(Decl::Namespace),
             _ => Err(KqlError::parse(
                 self.curr.span.clone(),
-                format!("Expected declaration (struct, enum, let, database), found {:?}", self.curr.kind),
+                format!("Expected declaration (struct, enum, let, namespace), found {:?}", self.curr.kind),
             )),
         }
     }
@@ -230,25 +242,31 @@ impl<'a> Parser<'a> {
         Ok(LetDecl { attrs, name, ty, value, span })
     }
 
-    fn parse_database_declaration(&mut self, attrs: Vec<Attribute>) -> Result<DatabaseDecl> {
-        let start_span = self.expect(TokenKind::Database)?.span;
+    fn parse_namespace_declaration(&mut self, attrs: Vec<Attribute>) -> Result<NamespaceDecl> {
+        let start_span = self.expect(TokenKind::Namespace)?.span;
         let name = self.parse_ident()?;
-        self.expect(TokenKind::LBrace)?;
 
         let mut decls = Vec::new();
-        while self.curr.kind != TokenKind::RBrace && self.curr.kind != TokenKind::EOF {
-            decls.push(self.parse_declaration()?);
+        let mut is_block = false;
+        let mut end_span = name.span.clone();
+
+        if self.consume(TokenKind::LBrace) {
+            is_block = true;
+            while self.curr.kind != TokenKind::RBrace && self.curr.kind != TokenKind::EOF {
+                decls.push(self.parse_declaration()?);
+            }
+            end_span = self.expect(TokenKind::RBrace)?.span;
         }
 
-        let end_span = self.expect(TokenKind::RBrace)?.span;
         let span = Span {
             start: attrs.first().map(|a| a.span.start).unwrap_or(start_span.start),
             end: end_span.end,
         };
-        Ok(DatabaseDecl {
+        Ok(NamespaceDecl {
             attrs,
             name,
             decls,
+            is_block,
             span,
         })
     }
@@ -456,7 +474,7 @@ impl<'a> Parser<'a> {
     fn is_keyword(&self, kind: &TokenKind) -> bool {
         matches!(
             kind,
-            TokenKind::Struct | TokenKind::Enum | TokenKind::Let | TokenKind::Database
+            TokenKind::Struct | TokenKind::Enum | TokenKind::Let | TokenKind::Namespace
         )
     }
 }

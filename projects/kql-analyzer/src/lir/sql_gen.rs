@@ -1,5 +1,5 @@
 use crate::lir::SqlDialect;
-use crate::mir::{Column, ColumnType, MirDatabase, Table};
+use crate::mir::{Column, ColumnType, MirProgram, Table};
 use sqlparser::ast::{
     CharacterLength, ColumnDef, ColumnOption, ColumnOptionDef, DataType, Ident, ObjectName,
     Statement, TableConstraint,
@@ -7,12 +7,12 @@ use sqlparser::ast::{
 use sqlparser::tokenizer::Token;
 
 pub struct SqlGenerator {
-    pub mir_db: MirDatabase,
+    pub mir_db: MirProgram,
     pub dialect: SqlDialect,
 }
 
 impl SqlGenerator {
-    pub fn new(mir_db: MirDatabase, dialect: SqlDialect) -> Self {
+    pub fn new(mir_db: MirProgram, dialect: SqlDialect) -> Self {
         Self { mir_db, dialect }
     }
 

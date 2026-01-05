@@ -3,25 +3,25 @@ use kql_ast as ast;
 use kql_types::{KqlError, Result, Span};
 
 pub struct Lowerer {
-    pub db: HirDatabase,
+    pub db: HirProgram,
 }
 
 impl Lowerer {
     pub fn new() -> Self {
-        Self { db: HirDatabase::default() }
+        Self { db: HirProgram::default() }
     }
 
-    pub fn lower_database(&mut self, ast_db: &ast::Database) -> Result<HirDatabase> {
+    pub fn lower_program(&mut self, ast_db: &ast::Database) -> Result<HirProgram> {
         self.lower_decls(ast_db.decls.clone())?;
         Ok(self.db.clone())
     }
 
     pub fn lower_decls(&mut self, decls: Vec<ast::Decl>) -> Result<()> {
-        self.lower_decls_recursive(decls, None, None)
+        self.collect_names(decls.clone(), None, None)?;
+        self.lower_content(decls, None, None)
     }
 
-    fn lower_decls_recursive(&mut self, decls: Vec<ast::Decl>, namespace: Option<String>, db_schema: Option<String>) -> Result<()> {
-        // First pass: Collect all names to allow forward references
+    fn collect_names(&mut self, decls: Vec<ast::Decl>, namespace: Option<String>, db_schema: Option<String>) -> Result<()> {
         for decl in &decls {
             match decl {
                 ast::Decl::Struct(s) => {
@@ -54,12 +54,16 @@ impl Lowerer {
                     self.db.name_to_id.insert(full_name, id);
                     self.db.id_to_kind.insert(id, HirKind::Let);
                 }
-                ast::Decl::Database(d) => {
+                ast::Decl::Namespace(d) => {
                     let sub_namespace = if let Some(ns) = &namespace {
                         format!("{}::{}", ns, d.name.name)
                     } else {
                         d.name.name.clone()
                     };
+
+                    if namespace.is_some() && !d.is_block {
+                         return Err(KqlError::parse(d.span, "Top-level namespace cannot be nested within another namespace. Use block-style 'namespace { ... }' instead.".to_string()));
+                    }
                     
                     // Extract @schema from attributes
                     let mut sub_db_schema = db_schema.clone();
@@ -75,12 +79,14 @@ impl Lowerer {
                         }
                     }
                     
-                    self.lower_decls_recursive(d.decls.clone(), Some(sub_namespace), sub_db_schema)?;
+                    self.collect_names(d.decls.clone(), Some(sub_namespace), sub_db_schema)?;
                 }
             }
         }
+        Ok(())
+    }
 
-        // Second pass: Lower actual content
+    fn lower_content(&mut self, decls: Vec<ast::Decl>, namespace: Option<String>, db_schema: Option<String>) -> Result<()> {
         for decl in decls {
             match decl {
                 ast::Decl::Struct(s) => {
@@ -110,13 +116,13 @@ impl Lowerer {
                     let hir_l = self.lower_let(l, namespace.clone(), &full_name)?;
                     self.db.lets.insert(hir_l.id, hir_l);
                 }
-                ast::Decl::Database(d) => {
+                ast::Decl::Namespace(d) => {
                     let sub_namespace = if let Some(ns) = &namespace {
                         format!("{}::{}", ns, d.name.name)
                     } else {
                         d.name.name.clone()
                     };
-                    
+
                     // Extract @schema from attributes
                     let mut sub_db_schema = db_schema.clone();
                     for attr in &d.attrs {
@@ -130,7 +136,7 @@ impl Lowerer {
                             }
                         }
                     }
-                    self.lower_decls_recursive(d.decls.clone(), Some(sub_namespace), sub_db_schema)?;
+                    self.lower_content(d.decls.clone(), Some(sub_namespace), sub_db_schema)?;
                 }
             }
         }

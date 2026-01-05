@@ -1,11 +1,11 @@
 use crate::hir::{
-    HirDatabase, HirExprKind, HirLiteral, HirType, PrimitiveType,
+    HirExprKind, HirLiteral, HirProgram, HirType, PrimitiveType,
 };
 use crate::mir::*;
 use kql_types::Result;
 
 pub struct MirLowerer {
-    hir_db: HirDatabase,
+    hir_db: HirProgram,
 }
 
 fn to_snake_case(s: &str) -> String {
@@ -20,16 +20,16 @@ fn to_snake_case(s: &str) -> String {
 }
 
 impl MirLowerer {
-    pub fn new(hir_db: HirDatabase) -> Self {
+    pub fn new(hir_db: HirProgram) -> Self {
         Self { hir_db }
     }
 
-    pub fn lower(&mut self) -> Result<MirDatabase> {
-        let mut mir_db = MirDatabase::default();
+    pub fn lower(&mut self) -> Result<MirProgram> {
+        let mut mir_db = MirProgram::default();
 
         for s in self.hir_db.structs.values() {
             let mut table_name = to_snake_case(&s.name);
-            let mut schema = None;
+            let mut schema = s.schema.clone(); // Use schema from HIR (propagated from namespace)
             let mut primary_key = None;
             let mut indexes = Vec::new();
 
@@ -40,7 +40,7 @@ impl MirLowerer {
                             if let Some(name) = &arg.name {
                                 if name == "schema" {
                                     if let HirExprKind::Literal(HirLiteral::String(s)) = &arg.value.kind {
-                                        schema = Some(s.clone());
+                                        schema = Some(s.clone()); // Override with explicit @table(schema: ...)
                                     }
                                 }
                             } else if let HirExprKind::Literal(HirLiteral::String(name)) = &arg.value.kind {
@@ -180,8 +180,14 @@ impl MirLowerer {
                 });
             }
 
+            let full_name = if let Some(ns) = &s.namespace {
+                format!("{}::{}", ns, s.name)
+            } else {
+                s.name.clone()
+            };
+
             mir_db.tables.insert(
-                s.name.clone(),
+                full_name,
                 Table {
                     schema,
                     name: table_name,
