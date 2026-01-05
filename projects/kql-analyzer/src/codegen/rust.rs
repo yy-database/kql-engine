@@ -1,8 +1,10 @@
-use crate::hir::{HirProgram, HirStruct, HirEnum, HirType, PrimitiveType};
+use crate::hir::{HirProgram, HirStruct, HirEnum, HirType, PrimitiveType, HirId};
+use crate::lir::SqlDialect;
 use std::collections::BTreeMap;
 
 pub struct RustGenerator {
     pub db: HirProgram,
+    pub dialect: SqlDialect,
 }
 
 #[derive(Default)]
@@ -12,11 +14,9 @@ struct ModuleNode {
     enums: Vec<HirId>,
 }
 
-use crate::hir::HirId;
-
 impl RustGenerator {
-    pub fn new(db: HirProgram) -> Self {
-        Self { db }
+    pub fn new(db: HirProgram, dialect: SqlDialect) -> Self {
+        Self { db, dialect }
     }
 
     pub fn generate(&self) -> String {
@@ -140,17 +140,33 @@ impl RustGenerator {
         out
     }
 
+    fn pool_name(&self) -> &str {
+        match self.dialect {
+            SqlDialect::Postgres => "PgPool",
+            SqlDialect::MySql => "MySqlPool",
+            SqlDialect::Sqlite => "SqlitePool",
+        }
+    }
+
+    fn placeholder(&self, i: usize) -> String {
+        match self.dialect {
+            SqlDialect::Postgres => format!("${}", i),
+            SqlDialect::MySql | SqlDialect::Sqlite => "?".to_string(),
+        }
+    }
+
     fn gen_repository(&self, s: &HirStruct, indent: usize) -> String {
         let indent_str = "    ".repeat(indent);
         let mut out = String::new();
         let repo_name = format!("{}Repository", s.name);
+        let pool_name = self.pool_name();
         
         out.push_str(&format!("{}pub struct {} {{\n", indent_str, repo_name));
-        out.push_str(&format!("{}    pool: PgPool,\n", indent_str));
+        out.push_str(&format!("{}    pool: {},\n", indent_str, pool_name));
         out.push_str(&format!("{}}}\n\n", indent_str));
         
         out.push_str(&format!("{}impl {} {{\n", indent_str, repo_name));
-        out.push_str(&format!("{}    pub fn new(pool: PgPool) -> Self {{\n", indent_str));
+        out.push_str(&format!("{}    pub fn new(pool: {}) -> Self {{\n", indent_str, pool_name));
         out.push_str(&format!("{}        Self {{ pool }}\n", indent_str));
         out.push_str(&format!("{}    }}\n\n", indent_str));
 
@@ -161,10 +177,11 @@ impl RustGenerator {
 
         if let Some(pk) = pk_field {
             let pk_ty = self.gen_type(&pk.ty);
+            let p1 = self.placeholder(1);
             
             // Find method
             out.push_str(&format!("{}    pub async fn find(&self, id: {}) -> Result<Option<{}>, sqlx::Error> {{\n", indent_str, pk_ty, s.name));
-            out.push_str(&format!("{}        sqlx::query_as::<_, {}>( \"SELECT * FROM {} WHERE {} = $1\")\n", indent_str, s.name, s.name.to_lowercase(), pk.name));
+            out.push_str(&format!("{}        sqlx::query_as::<_, {}>( \"SELECT * FROM {} WHERE {} = {}\")\n", indent_str, s.name, s.name.to_lowercase(), pk.name, p1));
             out.push_str(&format!("{}            .bind(id)\n", indent_str));
             out.push_str(&format!("{}            .fetch_optional(&self.pool)\n", indent_str));
             out.push_str(&format!("{}            .await\n", indent_str));
@@ -172,7 +189,7 @@ impl RustGenerator {
 
             // Delete method
             out.push_str(&format!("{}    pub async fn delete(&self, id: {}) -> Result<(), sqlx::Error> {{\n", indent_str, pk_ty));
-            out.push_str(&format!("{}        sqlx::query(\"DELETE FROM {} WHERE {} = $1\")\n", indent_str, s.name.to_lowercase(), pk.name));
+            out.push_str(&format!("{}        sqlx::query(\"DELETE FROM {} WHERE {} = {}\")\n", indent_str, s.name.to_lowercase(), pk.name, p1));
             out.push_str(&format!("{}            .bind(id)\n", indent_str));
             out.push_str(&format!("{}            .execute(&self.pool)\n", indent_str));
             out.push_str(&format!("{}            .await?;\n", indent_str));
@@ -187,7 +204,7 @@ impl RustGenerator {
         
         if !insert_fields.is_empty() {
             let field_names: Vec<_> = insert_fields.iter().map(|f| f.name.as_str()).collect();
-            let placeholders: Vec<_> = (1..=insert_fields.len()).map(|i| format!("${}", i)).collect();
+            let placeholders: Vec<_> = (1..=insert_fields.len()).map(|i| self.placeholder(i)).collect();
             
             out.push_str(&format!("{}    pub async fn insert(&self, model: &{}) -> Result<(), sqlx::Error> {{\n", indent_str, s.name));
             out.push_str(&format!("{}        sqlx::query(\"INSERT INTO {} ({}) VALUES ({})\")\n", 
@@ -214,16 +231,16 @@ impl RustGenerator {
             if !update_fields.is_empty() {
                 let mut sets = Vec::new();
                 for (i, f) in update_fields.iter().enumerate() {
-                    sets.push(format!("{} = ${}", f.name, i + 1));
+                    sets.push(format!("{} = {}", f.name, self.placeholder(i + 1)));
                 }
                 
                 out.push_str(&format!("{}    pub async fn update(&self, model: &{}) -> Result<(), sqlx::Error> {{\n", indent_str, s.name));
-                out.push_str(&format!("{}        sqlx::query(\"UPDATE {} SET {} WHERE {} = ${}\")\n", 
+                out.push_str(&format!("{}        sqlx::query(\"UPDATE {} SET {} WHERE {} = {}\")\n", 
                     indent_str, 
                     s.name.to_lowercase(), 
                     sets.join(", "), 
                     pk.name,
-                    update_fields.len() + 1
+                    self.placeholder(update_fields.len() + 1)
                 ));
                 for f in &update_fields {
                     out.push_str(&format!("{}            .bind(&model.{})\n", indent_str, f.name));
@@ -282,7 +299,7 @@ impl RustGenerator {
                 }
                 "i32".to_string()
             }
-            HirType::Relation { target, is_list } => {
+            HirType::Relation { target, is_list, .. } => {
                 let target_name = self.db.structs.get(target).map(|s| s.name.clone()).unwrap_or_else(|| "UnknownStruct".to_string());
                 if *is_list {
                     format!("Vec<{}>", target_name)

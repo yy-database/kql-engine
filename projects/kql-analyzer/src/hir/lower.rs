@@ -200,9 +200,32 @@ impl Lowerer {
 
             // Check for @relation
             let mut is_relation = false;
+            let mut rel_name = None;
+            let mut rel_fk = None;
+            let mut rel_ref = None;
             for attr in &f_attrs {
                 if attr.name == "relation" {
                     is_relation = true;
+                    for arg in &attr.args {
+                        match arg.name.as_deref() {
+                            Some("name") => {
+                                if let HirExprKind::Literal(HirLiteral::String(s)) = &arg.value.kind {
+                                    rel_name = Some(s.clone());
+                                }
+                            }
+                            Some("foreign_key") => {
+                                if let HirExprKind::Literal(HirLiteral::String(s)) = &arg.value.kind {
+                                    rel_fk = Some(s.clone());
+                                }
+                            }
+                            Some("references") => {
+                                if let HirExprKind::Literal(HirLiteral::String(s)) = &arg.value.kind {
+                                    rel_ref = Some(s.clone());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                     break;
                 }
             }
@@ -210,16 +233,34 @@ impl Lowerer {
             if is_relation {
                 match &f_ty {
                     HirType::Struct(target_id) => {
-                        f_ty = HirType::Relation { target: *target_id, is_list: false };
+                        f_ty = HirType::Relation { 
+                            name: rel_name,
+                            target: *target_id, 
+                            is_list: false,
+                            foreign_key: rel_fk,
+                            references: rel_ref,
+                        };
                     }
                     HirType::List(inner) => {
                         if let HirType::Struct(target_id) = inner.as_ref() {
-                            f_ty = HirType::Relation { target: *target_id, is_list: true };
+                            f_ty = HirType::Relation { 
+                                name: rel_name,
+                                target: *target_id, 
+                                is_list: true,
+                                foreign_key: rel_fk,
+                                references: rel_ref,
+                            };
                         }
                     }
                     HirType::Optional(inner) => {
                         if let HirType::Struct(target_id) = inner.as_ref() {
-                            f_ty = HirType::Relation { target: *target_id, is_list: false };
+                            f_ty = HirType::Relation { 
+                                name: rel_name,
+                                target: *target_id, 
+                                is_list: false,
+                                foreign_key: rel_fk,
+                                references: rel_ref,
+                            };
                         }
                     }
                     _ => {
@@ -766,8 +807,10 @@ impl Lowerer {
                             }
                         }
                     }
-                    HirType::Relation { target, is_list } => {
-                        if let Some(s) = self.db.structs.get(target) {
+                    HirType::Relation { target, is_list, .. } => {
+                        if member_name == "count" {
+                             ty = HirType::Primitive(PrimitiveType::I64);
+                        } else if let Some(s) = self.db.structs.get(target) {
                             if let Some(f) = s.fields.iter().find(|f| f.name == member_name) {
                                 ty = f.ty.clone();
                                 if *is_list {
@@ -779,6 +822,16 @@ impl Lowerer {
                                     format!("Struct '{}' has no field '{}'", s.name, member_name),
                                 ));
                             }
+                        }
+                    }
+                    HirType::List(_) => {
+                        if member_name == "count" {
+                            ty = HirType::Primitive(PrimitiveType::I64);
+                        } else {
+                            self.errors.push(KqlError::semantic(
+                                m.span,
+                                format!("Cannot access member '{}' on List type", member_name),
+                            ));
                         }
                     }
                     HirType::Unknown => {}
@@ -819,11 +872,23 @@ impl Lowerer {
                 }
             }
             "count" => Some(HirType::Primitive(PrimitiveType::I64)),
-            "sum" | "avg" | "min" | "max" => {
+            "sum" | "min" | "max" => {
                 if args.len() == 1 {
                     let arg_ty = &args[0].ty;
                     if matches!(arg_ty, HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128)) {
                         Some(arg_ty.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            "avg" => {
+                if args.len() == 1 {
+                    let arg_ty = &args[0].ty;
+                    if matches!(arg_ty, HirType::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::F32 | PrimitiveType::F64 | PrimitiveType::D128)) {
+                        Some(HirType::Primitive(PrimitiveType::F64)) // Always return float for average
                     } else {
                         None
                     }
@@ -848,7 +913,7 @@ impl Lowerer {
             }
             "coalesce" | "ifnull" => {
                 if args.len() >= 2 {
-                    let mut common_ty = args[0].ty.clone();
+                    let common_ty = args[0].ty.clone();
                     // Strip optional if needed for comparison
                     let mut base_ty = match &common_ty {
                         HirType::Optional(inner) => inner.as_ref().clone(),

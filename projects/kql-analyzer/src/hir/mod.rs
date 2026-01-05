@@ -24,8 +24,11 @@ pub enum HirType {
         entity: HirId,
     },
     Relation {
+        name: Option<String>,
         target: HirId,
         is_list: bool,
+        foreign_key: Option<String>,
+        references: Option<String>,
     },
     Null,
     Unknown,

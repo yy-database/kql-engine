@@ -1,10 +1,13 @@
+use crate::hir::{
+    HirBinaryOp, HirExpr, HirExprKind, HirLiteral, HirUnaryOp,
+};
 use crate::lir::SqlDialect;
-use crate::mir::{Column, ColumnType, MirProgram, Table, ReferenceAction};
+use crate::mir::{Column, ColumnType, MirProgram, Table, ReferenceAction, mir_gen::to_snake_case};
 use sqlparser::ast::{
     CharacterLength, ColumnDef, ColumnOption, ColumnOptionDef, DataType, Ident, ObjectName,
     ReferentialAction, Statement, TableConstraint, Query, SetExpr, Values, Expr, Value,
     Assignment, Select, SelectItem, TableWithJoins, TableFactor, Join, JoinOperator, JoinConstraint,
-    AlterTableOperation,
+    AlterTableOperation, BinaryOperator, UnaryOperator, Function, FunctionArg, FunctionArgExpr,
 };
 use sqlparser::tokenizer::Token;
 use crate::migration::MigrationStep;
@@ -338,6 +341,312 @@ impl SqlGenerator {
         })
     }
 
+    pub fn generate_expr(&self, expr: &HirExpr) -> Expr {
+        match &expr.kind {
+            HirExprKind::Literal(lit) => match lit {
+                HirLiteral::Integer64(n) => Expr::Value(Value::Number(n.to_string(), false)),
+                HirLiteral::Float64(f) => Expr::Value(Value::Number(f.to_string(), false)),
+                HirLiteral::String(s) => Expr::Value(Value::SingleQuotedString(s.clone())),
+                HirLiteral::Bool(b) => Expr::Value(Value::Boolean(*b)),
+                HirLiteral::Null => Expr::Value(Value::Null),
+            },
+            HirExprKind::Symbol(s) => Expr::Identifier(Ident::new(s)),
+            HirExprKind::Member { object, member } => {
+                let obj_expr = self.generate_expr(object);
+                if let Expr::Identifier(id) = obj_expr {
+                    Expr::CompoundIdentifier(vec![id, Ident::new(member)])
+                } else {
+                    // Fallback or error handling
+                    Expr::Identifier(Ident::new(member))
+                }
+            }
+            HirExprKind::Binary { left, op, right } => {
+                let sql_op = match op {
+                    HirBinaryOp::Add => BinaryOperator::Plus,
+                    HirBinaryOp::Sub => BinaryOperator::Minus,
+                    HirBinaryOp::Mul => BinaryOperator::Multiply,
+                    HirBinaryOp::Div => BinaryOperator::Divide,
+                    HirBinaryOp::Eq => BinaryOperator::Eq,
+                    HirBinaryOp::NotEq => BinaryOperator::NotEq,
+                    HirBinaryOp::Lt => BinaryOperator::Lt,
+                    HirBinaryOp::LtEq => BinaryOperator::LtEq,
+                    HirBinaryOp::Gt => BinaryOperator::Gt,
+                    HirBinaryOp::GtEq => BinaryOperator::GtEq,
+                    HirBinaryOp::And => BinaryOperator::And,
+                    HirBinaryOp::Or => BinaryOperator::Or,
+                    HirBinaryOp::Mod => BinaryOperator::Modulo,
+                };
+                Expr::BinaryOp {
+                    left: Box::new(self.generate_expr(left)),
+                    op: sql_op,
+                    right: Box::new(self.generate_expr(right)),
+                }
+            }
+            HirExprKind::Unary { op, expr } => {
+                let sql_op = match op {
+                    HirUnaryOp::Not => UnaryOperator::Not,
+                    HirUnaryOp::Neg => UnaryOperator::Minus,
+                };
+                Expr::UnaryOp {
+                    op: sql_op,
+                    expr: Box::new(self.generate_expr(expr)),
+                }
+            }
+            HirExprKind::Cast { expr, target_ty } => {
+                // Generate a CAST(expr AS target_ty)
+                let data_type = match target_ty {
+                    crate::hir::HirType::Primitive(p) => match p {
+                        crate::hir::PrimitiveType::I32 => DataType::Int(None),
+                        crate::hir::PrimitiveType::I64 => DataType::BigInt(None),
+                        crate::hir::PrimitiveType::F32 => DataType::Float(None),
+                        crate::hir::PrimitiveType::F64 => DataType::Double,
+                        crate::hir::PrimitiveType::String => DataType::Varchar(None),
+                        crate::hir::PrimitiveType::Bool => DataType::Boolean,
+                        crate::hir::PrimitiveType::DateTime => DataType::Timestamp(None, sqlparser::ast::TimezoneInfo::None),
+                        crate::hir::PrimitiveType::Uuid => DataType::Uuid,
+                        crate::hir::PrimitiveType::D128 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
+                    },
+                    _ => DataType::Varchar(None), // Fallback
+                };
+                Expr::Cast {
+                    expr: Box::new(self.generate_expr(expr)),
+                    data_type,
+                    format: None,
+                }
+            }
+            HirExprKind::Call { func, args } => {
+                if let HirExprKind::Symbol(name) = &func.kind {
+                    let sql_args = args.iter().map(|arg| {
+                        FunctionArg::Unnamed(FunctionArgExpr::Expr(self.generate_expr(arg)))
+                    }).collect();
+                    
+                    Expr::Function(Function {
+                        name: ObjectName(vec![Ident::new(name)]),
+                        args: sql_args,
+                        over: None,
+                        distinct: false,
+                        special: false,
+                        order_by: vec![],
+                        filter: None,
+                        null_treatment: None,
+                    })
+                } else {
+                    Expr::Value(Value::Null) // Fallback
+                }
+            }
+            _ => Expr::Value(Value::Null), // Unimplemented
+        }
+    }
+
+    pub fn generate_mir_query(&self, query: &crate::mir::MirQuery) -> Statement {
+        let table = self.mir_db.tables.values().find(|t| t.name == query.source_table)
+            .expect("Source table not found");
+        
+        let table_name = self.get_table_object_name(table);
+        let table_alias = table.name.clone();
+
+        let mut joins = Vec::new();
+        for mir_join in &query.joins {
+            joins.push(self.generate_mir_join(&table_alias, mir_join));
+        }
+
+        let projection = if query.projection.is_empty() || matches!(query.projection[0], crate::mir::MirProjection::All) {
+            vec![SelectItem::Wildcard(sqlparser::ast::WildcardAdditionalOptions::default())]
+        } else {
+            query.projection.iter().map(|p| self.generate_mir_projection(p)).collect()
+        };
+
+        let selection = query.selection.as_ref().map(|e| self.generate_mir_expr(e));
+
+        Statement::Query(Box::new(Query {
+            with: None,
+            body: Box::new(SetExpr::Select(Box::new(Select {
+                distinct: None,
+                top: None,
+                projection,
+                into: None,
+                from: vec![TableWithJoins {
+                    relation: TableFactor::Table {
+                        name: table_name,
+                        alias: Some(sqlparser::ast::TableAlias {
+                            name: Ident::new(&table_alias),
+                            columns: vec![],
+                        }),
+                        args: None,
+                        with_hints: vec![],
+                        version: None,
+                        partitions: vec![],
+                    },
+                    joins,
+                }],
+                lateral_views: vec![],
+                selection,
+                group_by: sqlparser::ast::GroupByExpr::Expressions(vec![]),
+                cluster_by: vec![],
+                distribute_by: vec![],
+                sort_by: vec![],
+                having: None,
+                named_window: vec![],
+                qualify: None,
+            }))),
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            fetch: None,
+            locks: vec![],
+            for_clause: None,
+            limit_by: vec![],
+        }))
+    }
+
+    fn generate_mir_join(&self, source_alias: &str, join: &crate::mir::MirJoin) -> Join {
+        let target_table = self.mir_db.tables.values().find(|t| t.name == join.target_table)
+            .expect("Target table not found");
+        
+        let target_table_name = self.get_table_object_name(target_table);
+        let target_alias = join.relation_name.clone();
+
+        // Find the relation metadata to get join columns
+        let source_table = self.mir_db.tables.values().find(|t| t.name == source_alias || t.name == to_snake_case(source_alias))
+            .expect("Source table not found for join");
+        
+        let rel = source_table.relations.iter().find(|r| r.name == join.relation_name)
+            .expect("Relation not found in source table");
+
+        let condition = Expr::BinaryOp {
+            left: Box::new(Expr::CompoundIdentifier(vec![
+                Ident::new(source_alias),
+                Ident::new(&rel.foreign_key_column),
+            ])),
+            op: BinaryOperator::Eq,
+            right: Box::new(Expr::CompoundIdentifier(vec![
+                Ident::new(&target_alias),
+                Ident::new(&rel.target_column),
+            ])),
+        };
+
+        let join_operator = match join.join_type {
+            crate::mir::MirJoinType::Inner => JoinOperator::Inner(JoinConstraint::On(condition)),
+            crate::mir::MirJoinType::Left => JoinOperator::LeftOuter(JoinConstraint::On(condition)),
+            crate::mir::MirJoinType::Right => JoinOperator::RightOuter(JoinConstraint::On(condition)),
+            crate::mir::MirJoinType::Full => JoinOperator::FullOuter(JoinConstraint::On(condition)),
+        };
+
+        Join {
+            relation: TableFactor::Table {
+                name: target_table_name,
+                alias: Some(sqlparser::ast::TableAlias {
+                    name: Ident::new(&target_alias),
+                    columns: vec![],
+                }),
+                args: None,
+                with_hints: vec![],
+                version: None,
+                partitions: vec![],
+            },
+            join_operator,
+        }
+    }
+
+    fn generate_mir_projection(&self, proj: &crate::mir::MirProjection) -> SelectItem {
+        match proj {
+            crate::mir::MirProjection::All => SelectItem::Wildcard(sqlparser::ast::WildcardAdditionalOptions::default()),
+            crate::mir::MirProjection::Field(name) => SelectItem::UnnamedExpr(Expr::Identifier(Ident::new(name))),
+            crate::mir::MirProjection::Alias(alias, expr) => SelectItem::ExprWithAlias {
+                expr: self.generate_mir_expr(expr),
+                alias: Ident::new(alias),
+            },
+            crate::mir::MirProjection::Aggregation(agg) => {
+                let func_name = agg.func.clone();
+                let arg = self.generate_mir_expr(&agg.arg);
+                let func = Function {
+                    name: ObjectName(vec![Ident::new(func_name)]),
+                    args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(arg))],
+                    over: None,
+                    distinct: false,
+                    special: false,
+                    order_by: vec![],
+                    filter: None,
+                    null_treatment: None,
+                };
+                let expr = Expr::Function(func);
+                if let Some(alias) = &agg.alias {
+                    SelectItem::ExprWithAlias {
+                        expr,
+                        alias: Ident::new(alias),
+                    }
+                } else {
+                    SelectItem::UnnamedExpr(expr)
+                }
+            }
+        }
+    }
+
+    fn generate_mir_expr(&self, expr: &crate::mir::MirExpr) -> Expr {
+        match expr {
+            crate::mir::MirExpr::Column { table_alias, column } => {
+                if let Some(alias) = table_alias {
+                    Expr::CompoundIdentifier(vec![Ident::new(alias), Ident::new(column)])
+                } else {
+                    Expr::Identifier(Ident::new(column))
+                }
+            }
+            crate::mir::MirExpr::Literal(lit) => match lit {
+                crate::mir::MirLiteral::Integer64(n) => Expr::Value(Value::Number(n.to_string(), false)),
+                crate::mir::MirLiteral::Float64(f) => Expr::Value(Value::Number(f.to_string(), false)),
+                crate::mir::MirLiteral::String(s) => Expr::Value(Value::SingleQuotedString(s.clone())),
+                crate::mir::MirLiteral::Bool(b) => Expr::Value(Value::Boolean(*b)),
+                crate::mir::MirLiteral::Null => Expr::Value(Value::Null),
+            },
+            crate::mir::MirExpr::Binary { left, op, right } => Expr::BinaryOp {
+                left: Box::new(self.generate_mir_expr(left)),
+                op: self.map_mir_binary_op(*op),
+                right: Box::new(self.generate_mir_expr(right)),
+            },
+            crate::mir::MirExpr::Unary { op, expr } => Expr::UnaryOp {
+                op: self.map_mir_unary_op(*op),
+                expr: Box::new(self.generate_mir_expr(expr)),
+            },
+            crate::mir::MirExpr::Call { func, args } => {
+                Expr::Function(Function {
+                    name: ObjectName(vec![Ident::new(func)]),
+                    args: args.iter().map(|a| FunctionArg::Unnamed(FunctionArgExpr::Expr(self.generate_mir_expr(a)))).collect(),
+                    over: None,
+                    distinct: false,
+                    special: false,
+                    order_by: vec![],
+                    filter: None,
+                    null_treatment: None,
+                })
+            }
+        }
+    }
+
+    fn map_mir_binary_op(&self, op: crate::mir::MirBinaryOp) -> BinaryOperator {
+        match op {
+            crate::mir::MirBinaryOp::Add => BinaryOperator::Plus,
+            crate::mir::MirBinaryOp::Sub => BinaryOperator::Minus,
+            crate::mir::MirBinaryOp::Mul => BinaryOperator::Multiply,
+            crate::mir::MirBinaryOp::Div => BinaryOperator::Divide,
+            crate::mir::MirBinaryOp::Mod => BinaryOperator::Modulo,
+            crate::mir::MirBinaryOp::Eq => BinaryOperator::Eq,
+            crate::mir::MirBinaryOp::NotEq => BinaryOperator::NotEq,
+            crate::mir::MirBinaryOp::Gt => BinaryOperator::Gt,
+            crate::mir::MirBinaryOp::Lt => BinaryOperator::Lt,
+            crate::mir::MirBinaryOp::GtEq => BinaryOperator::GtEq,
+            crate::mir::MirBinaryOp::LtEq => BinaryOperator::LtEq,
+            crate::mir::MirBinaryOp::And => BinaryOperator::And,
+            crate::mir::MirBinaryOp::Or => BinaryOperator::Or,
+        }
+    }
+
+    fn map_mir_unary_op(&self, op: crate::mir::MirUnaryOp) -> UnaryOperator {
+        match op {
+            crate::mir::MirUnaryOp::Neg => UnaryOperator::Minus,
+            crate::mir::MirUnaryOp::Not => UnaryOperator::Not,
+        }
+    }
+
     pub fn generate_select(&self, table: &Table, relations: &[&str]) -> Statement {
         let table_name = self.get_table_object_name(table);
         let table_alias = table.name.clone();
@@ -349,7 +658,78 @@ impl SqlGenerator {
 
         for rel_name in relations {
             if let Some(rel) = table.relations.iter().find(|r| &r.name == rel_name) {
-                // Find target table in MIR
+                // Check if this is a many-to-many relation
+                if let Some(rn) = &rel.relation_name {
+                    if let Some(junction_table) = self.mir_db.tables.get(rn) {
+                        // Many-to-Many Join
+                        let junction_table_name = self.get_table_object_name(junction_table);
+                        let junction_alias = rn.clone();
+                        
+                        // Find the column in junction table that points to current table
+                        let source_fk_col = format!("{}_id", table.name.to_lowercase());
+                        let target_fk_col = format!("{}_id", rel.target_table.to_lowercase());
+
+                        // 1. Join junction table
+                        joins.push(Join {
+                            relation: TableFactor::Table {
+                                name: junction_table_name,
+                                alias: Some(sqlparser::ast::TableAlias {
+                                    name: Ident::new(&junction_alias),
+                                    columns: vec![],
+                                }),
+                                args: None,
+                                with_hints: vec![],
+                                version: None,
+                                partitions: vec![],
+                            },
+                            join_operator: JoinOperator::LeftOuter(JoinConstraint::On(Expr::BinaryOp {
+                                left: Box::new(Expr::CompoundIdentifier(vec![
+                                    Ident::new(&table_alias),
+                                    Ident::new(&rel.foreign_key_column),
+                                ])),
+                                op: sqlparser::ast::BinaryOperator::Eq,
+                                right: Box::new(Expr::CompoundIdentifier(vec![
+                                    Ident::new(&junction_alias),
+                                    Ident::new(&source_fk_col),
+                                ])),
+                            })),
+                        });
+
+                        // 2. Join target table
+                        if let Some(target_table) = self.mir_db.tables.values().find(|t| t.name == rel.target_table) {
+                            let target_table_name = self.get_table_object_name(target_table);
+                            let target_alias = rel.name.clone();
+
+                            joins.push(Join {
+                                relation: TableFactor::Table {
+                                    name: target_table_name,
+                                    alias: Some(sqlparser::ast::TableAlias {
+                                        name: Ident::new(&target_alias),
+                                        columns: vec![],
+                                    }),
+                                    args: None,
+                                    with_hints: vec![],
+                                    version: None,
+                                    partitions: vec![],
+                                },
+                                join_operator: JoinOperator::LeftOuter(JoinConstraint::On(Expr::BinaryOp {
+                                    left: Box::new(Expr::CompoundIdentifier(vec![
+                                        Ident::new(&junction_alias),
+                                        Ident::new(&target_fk_col),
+                                    ])),
+                                    op: sqlparser::ast::BinaryOperator::Eq,
+                                    right: Box::new(Expr::CompoundIdentifier(vec![
+                                        Ident::new(&target_alias),
+                                        Ident::new(&rel.target_column),
+                                    ])),
+                                })),
+                            });
+                        }
+                        continue;
+                    }
+                }
+
+                // Regular One-to-Many / One-to-One Join
                 if let Some(target_table) = self.mir_db.tables.values().find(|t| t.name == rel.target_table) {
                     let target_table_name = self.get_table_object_name(target_table);
                     let target_alias = rel.name.clone();

@@ -2,6 +2,8 @@ use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::codegen::rust::RustGenerator;
 use kql_parser::parser::Parser;
 
+use kql_analyzer::lir::SqlDialect;
+
 #[test]
 fn test_rust_codegen_with_namespaces() {
     let input = r#"
@@ -31,7 +33,7 @@ fn test_rust_codegen_with_namespaces() {
     lowerer.lower_program(&ast).unwrap();
     let hir_db = lowerer.db;
 
-    let generator = RustGenerator::new(hir_db);
+    let generator = RustGenerator::new(hir_db, SqlDialect::Postgres);
     let code = generator.generate();
 
     println!("{}", code);

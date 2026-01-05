@@ -9,7 +9,7 @@ pub struct MirLowerer {
     hir_db: HirProgram,
 }
 
-fn to_snake_case(s: &str) -> String {
+pub fn to_snake_case(s: &str) -> String {
     let mut snake = String::new();
     for (i, ch) in s.char_indices() {
         if i > 0 && ch.is_uppercase() {
@@ -150,63 +150,53 @@ impl MirLowerer {
             let mut columns = Vec::new();
             let mut relations_list = Vec::new();
             for f in &s.fields {
-                if matches!(f.ty, HirType::Relation { .. }) {
+                if let HirType::Relation { name: rel_name, target, is_list, foreign_key, references, .. } = &f.ty {
                      // Virtual relation fields for @relation
-                     if let HirType::Relation { target, .. } = &f.ty {
-                         if let Some(target_struct) = self.hir_db.structs.get(target) {
-                             let mut foreign_key_column = None;
-                             let mut target_table = Some(to_snake_case(&target_struct.name));
-                             let mut target_column = Some("id".to_string());
+                     if let Some(target_struct) = self.hir_db.structs.get(target) {
+                         let foreign_key_column = foreign_key.clone();
+                         let mut target_table = Some(to_snake_case(&target_struct.name));
+                         let target_column = references.clone().or_else(|| Some("id".to_string()));
 
-                             for attr in &f.attrs {
-                                 if attr.name == "relation" {
-                                     for arg in &attr.args {
-                                         match arg.name.as_deref() {
-                                             Some("foreign_key") => {
-                                                 if let Some(s) = self.expr_to_string(&arg.value) {
-                                                     foreign_key_column = Some(s);
-                                                 }
+                         for attr in &f.attrs {
+                             if attr.name == "relation" {
+                                 for arg in &attr.args {
+                                     match arg.name.as_deref() {
+                                         Some("target") => {
+                                             if let Some(s) = self.expr_to_string(&arg.value) {
+                                                 target_table = Some(s);
                                              }
-                                             Some("target") => {
-                                                 if let Some(s) = self.expr_to_string(&arg.value) {
-                                                     target_table = Some(s);
-                                                 }
-                                             }
-                                             Some("references") => {
-                                                 if let Some(s) = self.expr_to_string(&arg.value) {
-                                                     target_column = Some(s);
-                                                 }
-                                             }
-                                             _ => {}
                                          }
+                                         _ => {}
                                      }
                                  }
                              }
+                         }
 
-                             let fk_col = foreign_key_column.unwrap_or_else(|| {
-                                 // Try to find a matching foreign key in the current table
-                                 for f2 in &s.fields {
-                                     if let HirType::ForeignKey { entity, .. } = &f2.ty {
-                                         if entity == target {
-                                             return f2.name.clone();
-                                         }
-                                     }
-                                     if let HirType::Key { entity: Some(ent), .. } = &f2.ty {
-                                         if ent == target {
-                                             return f2.name.clone();
-                                         }
+                         let fk_col = foreign_key_column.unwrap_or_else(|| {
+                             // Try to find a matching foreign key in the current table
+                             for f2 in &s.fields {
+                                 if let HirType::ForeignKey { entity, .. } = &f2.ty {
+                                     if entity == target {
+                                         return f2.name.clone();
                                      }
                                  }
-                                 "id".to_string() // Fallback
-                             });
+                                 if let HirType::Key { entity: Some(ent), .. } = &f2.ty {
+                                     if ent == target {
+                                         return f2.name.clone();
+                                     }
+                                 }
+                             }
+                             "id".to_string() // Fallback
+                         });
 
-                             relations_list.push(Relation {
-                                 name: f.name.clone(),
-                                 foreign_key_column: fk_col,
-                                 target_table: target_table.unwrap_or_else(|| "unknown".to_string()),
-                                 target_column: target_column.unwrap_or_else(|| "id".to_string()),
-                             });
-                         }
+                         relations_list.push(Relation {
+                             name: f.name.clone(),
+                             relation_name: rel_name.clone(),
+                             foreign_key_column: fk_col,
+                             target_table: target_table.unwrap_or_else(|| "unknown".to_string()),
+                             target_column: target_column.unwrap_or_else(|| "id".to_string()),
+                             is_list: *is_list,
+                         });
                      }
                      continue;
                  }
@@ -336,9 +326,11 @@ impl MirLowerer {
 
                         relations_list.push(Relation {
                             name: rel_name,
+                            relation_name: None,
                             foreign_key_column: f.name.clone(),
                             target_table: target_table_name.clone(),
                             target_column: "id".to_string(),
+                            is_list: false,
                         });
 
                         // Also add the actual foreign key constraint
@@ -403,7 +395,13 @@ impl MirLowerer {
                 let (id1, _f1, t1) = &fields[0];
                 let (id2, _f2, t2) = &fields[1];
 
-                if matches!(t1, HirType::List(_)) && matches!(t2, HirType::List(_)) {
+                let is_m2m = match (t1, t2) {
+                    (HirType::Relation { is_list: true, .. }, HirType::Relation { is_list: true, .. }) => true,
+                    (HirType::List(_), HirType::List(_)) => true, // Fallback for old style if any
+                    _ => false,
+                };
+
+                if is_m2m {
                     let s1 = &self.hir_db.structs[id1];
                     let s2 = &self.hir_db.structs[id2];
 
@@ -468,7 +466,200 @@ impl MirLowerer {
             }
         }
 
+        // 4. Lower queries from lets
+        for let_decl in self.hir_db.lets.values() {
+            if let Some(query) = self.lower_query(let_decl) {
+                mir_db.queries.insert(let_decl.name.clone(), query);
+            }
+        }
+
         Ok(mir_db)
+    }
+
+    fn lower_query(&self, let_decl: &crate::hir::HirLet) -> Option<MirQuery> {
+        let mut source_table = None;
+        let mut joins = Vec::new();
+        let mut selection = None;
+        let mut projection = Vec::new();
+
+        self.process_query_expr(&let_decl.value, &mut source_table, &mut joins, &mut selection, &mut projection);
+
+        source_table.map(|table| MirQuery {
+            name: let_decl.name.clone(),
+            source_table: table,
+            joins,
+            selection,
+            projection,
+        })
+    }
+
+    fn process_query_expr(
+        &self,
+        expr: &HirExpr,
+        source_table: &mut Option<String>,
+        joins: &mut Vec<MirJoin>,
+        selection: &mut Option<MirExpr>,
+        projection: &mut Vec<MirProjection>,
+    ) {
+        match &expr.kind {
+            HirExprKind::Symbol(name) => {
+                // Check if this symbol is a table (struct)
+                if let Some(id) = self.hir_db.name_to_id.get(name) {
+                    if matches!(self.hir_db.id_to_kind.get(id), Some(crate::hir::HirKind::Struct)) {
+                        *source_table = Some(to_snake_case(name));
+                        projection.push(MirProjection::All);
+                    }
+                }
+            }
+            HirExprKind::Member { object, member } => {
+                self.process_query_expr(object, source_table, joins, selection, projection);
+                
+                // If the object has a relation with this member name, add a join
+                if let HirType::Struct(id) = &object.ty {
+                    if let Some(s) = self.hir_db.structs.get(id) {
+                        if let Some(field) = s.fields.iter().find(|f| &f.name == member) {
+                            if let HirType::Relation { target, .. } = &field.ty {
+                                if let Some(target_struct) = self.hir_db.structs.get(target) {
+                                    joins.push(MirJoin {
+                                        relation_name: member.clone(),
+                                        target_table: to_snake_case(&target_struct.name),
+                                        join_type: MirJoinType::Left,
+                                        condition: None,
+                                    });
+                                    // Change projection to target table if it was wildcard
+                                    if projection.len() == 1 && matches!(projection[0], MirProjection::All) {
+                                        projection.clear();
+                                        projection.push(MirProjection::All); // Still All, but conceptually of the joined table
+                                    }
+                                }
+                            } else {
+                                // Regular field access
+                                projection.clear();
+                                projection.push(MirProjection::Field(member.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+            HirExprKind::Call { func, args } => {
+                if let HirExprKind::Member { object, member } = &func.kind {
+                    self.process_query_expr(object, source_table, joins, selection, projection);
+                    match member.as_str() {
+                        "filter" | "where" => {
+                            if let Some(arg) = args.get(0) {
+                                let cond = self.lower_expr(arg);
+                                *selection = match selection.take() {
+                                    Some(existing) => Some(MirExpr::Binary {
+                                        left: Box::new(existing),
+                                        op: MirBinaryOp::And,
+                                        right: Box::new(cond),
+                                    }),
+                                    None => Some(cond),
+                                };
+                            }
+                        }
+                        "select" => {
+                            projection.clear();
+                            for arg in args {
+                                projection.push(self.lower_projection(arg));
+                            }
+                        }
+                        _ => {
+                            // Might be an aggregation or other method
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn lower_expr(&self, expr: &HirExpr) -> MirExpr {
+        match &expr.kind {
+            HirExprKind::Literal(lit) => MirExpr::Literal(match lit {
+                HirLiteral::Integer64(n) => MirLiteral::Integer64(*n),
+                HirLiteral::Float64(f) => MirLiteral::Float64(*f),
+                HirLiteral::String(s) => MirLiteral::String(s.clone()),
+                HirLiteral::Bool(b) => MirLiteral::Bool(*b),
+                HirLiteral::Null => MirLiteral::Null,
+            }),
+            HirExprKind::Binary { left, op, right } => MirExpr::Binary {
+                left: Box::new(self.lower_expr(left)),
+                op: self.lower_binary_op(*op),
+                right: Box::new(self.lower_expr(right)),
+            },
+            HirExprKind::Unary { op, expr } => MirExpr::Unary {
+                op: self.lower_unary_op(*op),
+                expr: Box::new(self.lower_expr(expr)),
+            },
+            HirExprKind::Symbol(name) => MirExpr::Column {
+                table_alias: None,
+                column: name.clone(),
+            },
+            HirExprKind::Member { object: _, member } => MirExpr::Column {
+                table_alias: None, // Simplified
+                column: member.clone(),
+            },
+            HirExprKind::Call { func, args } => {
+                if let HirExprKind::Symbol(name) = &func.kind {
+                    MirExpr::Call {
+                        func: name.clone(),
+                        args: args.iter().map(|a| self.lower_expr(a)).collect(),
+                    }
+                } else {
+                    MirExpr::Literal(MirLiteral::Null)
+                }
+            }
+            _ => MirExpr::Literal(MirLiteral::Null),
+        }
+    }
+
+    fn lower_projection(&self, expr: &HirExpr) -> MirProjection {
+        match &expr.kind {
+            HirExprKind::Symbol(name) => MirProjection::Field(name.clone()),
+            HirExprKind::Member { member, .. } => MirProjection::Field(member.clone()),
+            HirExprKind::Call { func, args } => {
+                if let HirExprKind::Symbol(name) = &func.kind {
+                    MirProjection::Aggregation(MirAggregation {
+                        func: name.clone(),
+                        arg: Box::new(if let Some(arg) = args.get(0) {
+                            self.lower_expr(arg)
+                        } else {
+                            MirExpr::Literal(MirLiteral::Null)
+                        }),
+                        alias: None,
+                    })
+                } else {
+                    MirProjection::Field("unknown".to_string())
+                }
+            }
+            _ => MirProjection::Field("unknown".to_string()),
+        }
+    }
+
+    fn lower_binary_op(&self, op: crate::hir::HirBinaryOp) -> MirBinaryOp {
+        match op {
+            crate::hir::HirBinaryOp::Add => MirBinaryOp::Add,
+            crate::hir::HirBinaryOp::Sub => MirBinaryOp::Sub,
+            crate::hir::HirBinaryOp::Mul => MirBinaryOp::Mul,
+            crate::hir::HirBinaryOp::Div => MirBinaryOp::Div,
+            crate::hir::HirBinaryOp::Mod => MirBinaryOp::Mod,
+            crate::hir::HirBinaryOp::Eq => MirBinaryOp::Eq,
+            crate::hir::HirBinaryOp::NotEq => MirBinaryOp::NotEq,
+            crate::hir::HirBinaryOp::Gt => MirBinaryOp::Gt,
+            crate::hir::HirBinaryOp::Lt => MirBinaryOp::Lt,
+            crate::hir::HirBinaryOp::GtEq => MirBinaryOp::GtEq,
+            crate::hir::HirBinaryOp::LtEq => MirBinaryOp::LtEq,
+            crate::hir::HirBinaryOp::And => MirBinaryOp::And,
+            crate::hir::HirBinaryOp::Or => MirBinaryOp::Or,
+        }
+    }
+
+    fn lower_unary_op(&self, op: crate::hir::HirUnaryOp) -> MirUnaryOp {
+        match op {
+            crate::hir::HirUnaryOp::Neg => MirUnaryOp::Neg,
+            crate::hir::HirUnaryOp::Not => MirUnaryOp::Not,
+        }
     }
 
     fn get_pk_type(&self, id: &HirId) -> Result<ColumnType> {

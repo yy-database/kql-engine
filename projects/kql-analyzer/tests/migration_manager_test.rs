@@ -12,7 +12,7 @@ fn test_migration_creation() {
         "ALTER TABLE users ADD COLUMN name TEXT;".to_string(),
     ];
 
-    let file_path = manager.create_migration("init_db", &sqls).unwrap();
+    let file_path = manager.create_migration("init_db", &sqls, None).unwrap();
     
     assert!(file_path.exists());
     let filename = file_path.file_name().unwrap().to_str().unwrap();
@@ -29,8 +29,8 @@ fn test_list_migrations() {
     let dir = tempdir().unwrap();
     let manager = MigrationManager::new(dir.path());
 
-    manager.create_migration("first", &["SELECT 1;".to_string()]).unwrap();
-    manager.create_migration("second", &["SELECT 2;".to_string()]).unwrap();
+    manager.create_migration("first", &["SELECT 1;".to_string()], None).unwrap();
+    manager.create_migration("second", &["SELECT 2;".to_string()], None).unwrap();
 
     let migrations = manager.list_migrations().unwrap();
     assert_eq!(migrations.len(), 2);
