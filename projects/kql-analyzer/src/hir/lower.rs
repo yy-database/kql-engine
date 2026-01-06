@@ -5,6 +5,7 @@ use kql_types::{KqlError, Result, Span};
 pub struct Lowerer {
     pub db: HirProgram,
     pub errors: Vec<KqlError>,
+    pub current_namespace: Option<String>,
     pub current_struct_id: Option<HirId>,
     pub resolving_aliases: Vec<HirId>,
     pub ast_decls: std::collections::HashMap<HirId, ast::Decl>,
@@ -15,6 +16,7 @@ impl Lowerer {
         Self { 
             db: HirProgram::default(), 
             errors: Vec::new(), 
+            current_namespace: None,
             current_struct_id: None,
             resolving_aliases: Vec::new(),
             ast_decls: std::collections::HashMap::new(),
@@ -133,6 +135,9 @@ impl Lowerer {
     }
 
     fn lower_content(&mut self, decls: Vec<ast::Decl>, mut namespace: Option<String>, mut db_schema: Option<String>) -> Result<()> {
+        let old_ns = self.current_namespace.clone();
+        self.current_namespace = namespace.clone();
+
         for decl in decls {
             match decl {
                 ast::Decl::Struct(s) => {
@@ -184,6 +189,7 @@ impl Lowerer {
                         let (new_ns, new_schema) = self.get_ns_and_schema(&d, &namespace, &db_schema);
                         namespace = Some(new_ns);
                         db_schema = new_schema;
+                        self.current_namespace = namespace.clone();
                     } else {
                         let (sub_ns, sub_schema) = self.get_ns_and_schema(&d, &namespace, &db_schema);
                         if let Err(e) = self.lower_content(d.decls, Some(sub_ns), sub_schema) {
@@ -193,6 +199,7 @@ impl Lowerer {
                 }
             }
         }
+        self.current_namespace = old_ns;
         Ok(())
     }
 
@@ -702,6 +709,29 @@ impl Lowerer {
         }
     }
 
+    fn get_id_type(&self, id: HirId) -> HirType {
+        if let Some(l) = self.db.lets.get(&id) {
+            l.ty.clone()
+        }
+        else if let Some(kind) = self.db.id_to_kind.get(&id) {
+            match kind {
+                HirKind::Struct => HirType::Struct(id),
+                HirKind::Enum => HirType::Enum(id),
+                HirKind::TypeAlias => {
+                    if let Some(alias) = self.db.type_aliases.get(&id) {
+                        alias.ty.clone()
+                    } else {
+                        HirType::Unknown
+                    }
+                }
+                HirKind::Let => HirType::Unknown,
+            }
+        }
+        else {
+            HirType::Unknown
+        }
+    }
+
     fn lower_expr(&mut self, expr: ast::Expr) -> Result<HirExpr> {
         match expr {
             ast::Expr::Literal(l) => {
@@ -753,28 +783,18 @@ impl Lowerer {
                     }
                 }
 
-                // 2. Check global scope
+                // 2. Check current namespace
+                if let Some(ns) = &self.current_namespace {
+                    let full_name = format!("{}::{}", ns, v.name);
+                    if let Some(&id) = self.db.name_to_id.get(&full_name) {
+                        let ty = self.get_id_type(id);
+                        return Ok(HirExpr { kind: HirExprKind::Variable(id), ty, span: v.span });
+                    }
+                }
+
+                // 3. Check global scope
                 if let Some(&id) = self.db.name_to_id.get(&v.name) {
-                    let ty = if let Some(l) = self.db.lets.get(&id) {
-                        l.ty.clone()
-                    }
-                    else if let Some(kind) = self.db.id_to_kind.get(&id) {
-                        match kind {
-                            HirKind::Struct => HirType::Struct(id),
-                            HirKind::Enum => HirType::Enum(id),
-                            HirKind::TypeAlias => {
-                                if let Some(alias) = self.db.type_aliases.get(&id) {
-                                    alias.ty.clone()
-                                } else {
-                                    HirType::Unknown
-                                }
-                            }
-                            HirKind::Let => HirType::Unknown,
-                        }
-                    }
-                    else {
-                        HirType::Unknown
-                    };
+                    let ty = self.get_id_type(id);
                     Ok(HirExpr { kind: HirExprKind::Variable(id), ty, span: v.span })
                 }
                 else {
@@ -1011,14 +1031,30 @@ impl Lowerer {
                             }
                         }
                     }
-                    HirType::List(_) => {
+                    HirType::List(inner) => {
                         if member_name == "count" {
                             ty = HirType::Primitive(PrimitiveType::I64);
+                        } else if matches!(member_name.as_str(), "filter" | "where" | "select" | "sort" | "limit" | "offset" | "first" | "last") {
+                            // Query methods on list
+                            ty = HirType::List(inner.clone());
                         } else {
-                            self.errors.push(KqlError::semantic(
-                                m.span,
-                                format!("Cannot access member '{}' on List type", member_name),
-                            ));
+                            // Auto-map member access: List<T>.field -> List<typeof(T.field)>
+                            let mut found = false;
+                            if let HirType::Struct(id) = inner.as_ref() {
+                                if let Some(s) = self.db.structs.get(id) {
+                                    if let Some(f) = s.fields.iter().find(|f| f.name == member_name) {
+                                        ty = HirType::List(Box::new(f.ty.clone()));
+                                        found = true;
+                                    }
+                                }
+                            }
+
+                            if !found {
+                                self.errors.push(KqlError::semantic(
+                                    m.span,
+                                    format!("Cannot access member '{}' on List type", member_name),
+                                ));
+                            }
                         }
                     }
                     HirType::Unknown => {}

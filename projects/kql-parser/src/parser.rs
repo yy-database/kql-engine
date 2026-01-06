@@ -123,7 +123,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_declaration(&mut self) -> Result<Decl> {
         let attrs = self.parse_attributes()?;
-        match self.curr.kind {
+        let decl = match self.curr.kind {
             TokenKind::Struct => self.parse_struct_declaration(attrs).map(Decl::Struct),
             TokenKind::Enum => self.parse_enum_declaration(attrs).map(Decl::Enum),
             TokenKind::Let => self.parse_let_declaration(attrs).map(Decl::Let),
@@ -133,7 +133,10 @@ impl<'a> Parser<'a> {
                 self.curr.span.clone(),
                 format!("Expected declaration (struct, enum, let, namespace, type), found {:?}", self.curr.kind),
             )),
-        }
+        }?;
+
+        self.consume(TokenKind::Semicolon); // Allow optional semicolon after any declaration
+        Ok(decl)
     }
 
     fn parse_type_alias_declaration(&mut self, attrs: Vec<Attribute>) -> Result<TypeAliasDecl> {

@@ -20,6 +20,8 @@ pub struct MirQuery {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MirJoin {
+    pub source_table: String,
+    pub source_alias: String,
     pub relation_name: String, // The name of the relation field in KQL
     pub target_table: String,
     pub join_type: MirJoinType,
@@ -107,6 +109,7 @@ pub struct Relation {
     pub target_table: String,
     pub target_column: String,
     pub is_list: bool,
+    pub fk_on_target: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

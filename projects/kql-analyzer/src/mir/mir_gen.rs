@@ -195,13 +195,14 @@ impl MirLowerer {
                          });
 
                          relations_list.push(Relation {
-                             name: f.name.clone(),
-                             relation_name: rel_name.clone(),
-                             foreign_key_column: fk_col,
-                             target_table: target_table.unwrap_or_else(|| "unknown".to_string()),
-                             target_column: target_column.unwrap_or_else(|| "id".to_string()),
-                             is_list: *is_list,
-                         });
+                            name: f.name.clone(),
+                            relation_name: rel_name.clone(),
+                            foreign_key_column: fk_col,
+                            target_table: target_table.unwrap_or_else(|| "unknown".to_string()),
+                            target_column: target_column.unwrap_or_else(|| "id".to_string()),
+                            is_list: *is_list,
+                            fk_on_target: *is_list,
+                        });
                      }
                      continue;
                  }
@@ -336,6 +337,7 @@ impl MirLowerer {
                             target_table: target_table_name.clone(),
                             target_column: "id".to_string(),
                             is_list: false,
+                            fk_on_target: false,
                         });
 
                         // Also add the actual foreign key constraint
@@ -474,7 +476,12 @@ impl MirLowerer {
         // 4. Lower queries from lets
         for let_decl in self.hir_db.lets.values() {
             if let Some(query) = self.lower_query(let_decl) {
-                mir_db.queries.insert(let_decl.name.clone(), query);
+                let full_name = if let Some(ns) = &let_decl.namespace {
+                    format!("{}::{}", ns, let_decl.name)
+                } else {
+                    let_decl.name.clone()
+                };
+                mir_db.queries.insert(full_name, query);
             }
         }
 
@@ -486,8 +493,10 @@ impl MirLowerer {
         let mut joins = Vec::new();
         let mut selection = None;
         let mut projection = Vec::new();
+        let mut current_alias = None;
+        let mut current_table_name = None;
 
-        self.process_query_expr(&let_decl.value, &mut source_table, &mut joins, &mut selection, &mut projection);
+        self.process_query_expr(&let_decl.value, &mut source_table, &mut joins, &mut selection, &mut projection, &mut current_alias, &mut current_table_name);
 
         source_table.map(|table| MirQuery {
             name: let_decl.name.clone(),
@@ -505,36 +514,79 @@ impl MirLowerer {
         joins: &mut Vec<MirJoin>,
         selection: &mut Option<MirExpr>,
         projection: &mut Vec<MirProjection>,
+        current_alias: &mut Option<String>,
+        current_table_name: &mut Option<String>,
     ) {
         match &expr.kind {
+            HirExprKind::Variable(id) => {
+                if let Some(crate::hir::HirKind::Struct) = self.hir_db.id_to_kind.get(id) {
+                    if let Some(s) = self.hir_db.structs.get(id) {
+                        let table_name = to_snake_case(&s.name);
+                        *source_table = Some(table_name.clone());
+                        *current_alias = Some(table_name.clone());
+                        *current_table_name = Some(table_name);
+                        projection.push(MirProjection::All);
+                    }
+                }
+            }
             HirExprKind::Symbol(name) => {
                 // Check if this symbol is a table (struct)
                 if let Some(id) = self.hir_db.name_to_id.get(name) {
                     if matches!(self.hir_db.id_to_kind.get(id), Some(crate::hir::HirKind::Struct)) {
-                        *source_table = Some(to_snake_case(name));
+                        let table_name = to_snake_case(name);
+                        *source_table = Some(table_name.clone());
+                        *current_alias = Some(table_name.clone());
+                        *current_table_name = Some(table_name);
                         projection.push(MirProjection::All);
                     }
                 }
             }
             HirExprKind::Member { object, member } => {
-                self.process_query_expr(object, source_table, joins, selection, projection);
+                self.process_query_expr(object, source_table, joins, selection, projection, current_alias, current_table_name);
                 
+                let struct_id = match &object.ty {
+                    crate::hir::HirType::Struct(id) => Some(*id),
+                    crate::hir::HirType::List(inner) => {
+                        if let crate::hir::HirType::Struct(id) = inner.as_ref() {
+                            Some(*id)
+                        } else {
+                            None
+                        }
+                    }
+                    crate::hir::HirType::Relation { target, .. } => Some(*target),
+                    _ => None,
+                };
+
                 // If the object has a relation with this member name, add a join
-                if let HirType::Struct(id) = &object.ty {
-                    if let Some(s) = self.hir_db.structs.get(id) {
+                if let Some(id) = struct_id {
+                    if let Some(s) = self.hir_db.structs.get(&id) {
                         if let Some(field) = s.fields.iter().find(|f| &f.name == member) {
-                            if let HirType::Relation { target, .. } = &field.ty {
+                            if let crate::hir::HirType::Relation { target, .. } = &field.ty {
                                 if let Some(target_struct) = self.hir_db.structs.get(target) {
-                                    joins.push(MirJoin {
-                                        relation_name: member.clone(),
-                                        target_table: to_snake_case(&target_struct.name),
-                                        join_type: MirJoinType::Left,
-                                        condition: None,
-                                    });
+                                    let target_table = to_snake_case(&target_struct.name);
+                                    let join_alias = member.clone();
+                                    let source_alias = current_alias.clone().unwrap_or_else(|| "unknown".to_string());
+                                    let source_table_name = current_table_name.clone().unwrap_or_else(|| "unknown".to_string());
+                                    
+                                    // Avoid duplicate joins with the same alias
+                                    if !joins.iter().any(|j| &j.relation_name == &join_alias) {
+                                        joins.push(MirJoin {
+                                            source_table: source_table_name,
+                                            source_alias,
+                                            relation_name: join_alias.clone(),
+                                            target_table: target_table.clone(),
+                                            join_type: MirJoinType::Left,
+                                            condition: None,
+                                        });
+                                    }
+                                    
+                                    *current_alias = Some(join_alias);
+                                    *current_table_name = Some(target_table);
+                                    
                                     // Change projection to target table if it was wildcard
                                     if projection.len() == 1 && matches!(projection[0], MirProjection::All) {
                                         projection.clear();
-                                        projection.push(MirProjection::All); // Still All, but conceptually of the joined table
+                                        projection.push(MirProjection::All);
                                     }
                                 }
                             } else {
@@ -548,11 +600,11 @@ impl MirLowerer {
             }
             HirExprKind::Call { func, args } => {
                 if let HirExprKind::Member { object, member } = &func.kind {
-                    self.process_query_expr(object, source_table, joins, selection, projection);
+                    self.process_query_expr(object, source_table, joins, selection, projection, current_alias, current_table_name);
                     match member.as_str() {
                         "filter" | "where" => {
                             if let Some(arg) = args.get(0) {
-                                let cond = self.lower_expr(arg);
+                                let cond = self.lower_expr_with_alias(arg, current_alias.as_deref());
                                 *selection = match selection.take() {
                                     Some(existing) => Some(MirExpr::Binary {
                                         left: Box::new(existing),
@@ -566,7 +618,7 @@ impl MirLowerer {
                         "select" => {
                             projection.clear();
                             for arg in args {
-                                projection.push(self.lower_projection(arg));
+                                projection.push(self.lower_projection_with_alias(arg, current_alias.as_deref()));
                             }
                         }
                         _ => {
@@ -579,7 +631,7 @@ impl MirLowerer {
         }
     }
 
-    fn lower_expr(&self, expr: &HirExpr) -> MirExpr {
+    fn lower_expr_with_alias(&self, expr: &HirExpr, alias: Option<&str>) -> MirExpr {
         match &expr.kind {
             HirExprKind::Literal(lit) => MirExpr::Literal(match lit {
                 HirLiteral::Integer64(n) => MirLiteral::Integer64(*n),
@@ -589,27 +641,27 @@ impl MirLowerer {
                 HirLiteral::Null => MirLiteral::Null,
             }),
             HirExprKind::Binary { left, op, right } => MirExpr::Binary {
-                left: Box::new(self.lower_expr(left)),
+                left: Box::new(self.lower_expr_with_alias(left, alias)),
                 op: self.lower_binary_op(*op),
-                right: Box::new(self.lower_expr(right)),
+                right: Box::new(self.lower_expr_with_alias(right, alias)),
             },
             HirExprKind::Unary { op, expr } => MirExpr::Unary {
                 op: self.lower_unary_op(*op),
-                expr: Box::new(self.lower_expr(expr)),
+                expr: Box::new(self.lower_expr_with_alias(expr, alias)),
             },
             HirExprKind::Symbol(name) => MirExpr::Column {
-                table_alias: None,
+                table_alias: alias.map(|s| s.to_string()),
                 column: name.clone(),
             },
             HirExprKind::Member { object: _, member } => MirExpr::Column {
-                table_alias: None, // Simplified
+                table_alias: alias.map(|s| s.to_string()),
                 column: member.clone(),
             },
             HirExprKind::Call { func, args } => {
                 if let HirExprKind::Symbol(name) = &func.kind {
                     MirExpr::Call {
                         func: name.clone(),
-                        args: args.iter().map(|a| self.lower_expr(a)).collect(),
+                        args: args.iter().map(|a| self.lower_expr_with_alias(a, alias)).collect(),
                     }
                 } else {
                     MirExpr::Literal(MirLiteral::Null)
@@ -619,7 +671,7 @@ impl MirLowerer {
         }
     }
 
-    fn lower_projection(&self, expr: &HirExpr) -> MirProjection {
+    fn lower_projection_with_alias(&self, expr: &HirExpr, alias: Option<&str>) -> MirProjection {
         match &expr.kind {
             HirExprKind::Symbol(name) => MirProjection::Field(name.clone()),
             HirExprKind::Member { member, .. } => MirProjection::Field(member.clone()),
@@ -628,7 +680,7 @@ impl MirLowerer {
                     MirProjection::Aggregation(MirAggregation {
                         func: name.clone(),
                         arg: Box::new(if let Some(arg) = args.get(0) {
-                            self.lower_expr(arg)
+                            self.lower_expr_with_alias(arg, alias)
                         } else {
                             MirExpr::Literal(MirLiteral::Null)
                         }),

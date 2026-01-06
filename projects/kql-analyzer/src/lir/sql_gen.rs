@@ -454,7 +454,7 @@ impl SqlGenerator {
 
         let mut joins = Vec::new();
         for mir_join in &query.joins {
-            joins.push(self.generate_mir_join(&table_alias, mir_join));
+            joins.push(self.generate_mir_join(mir_join));
         }
 
         let projection = if query.projection.is_empty() || matches!(query.projection[0], crate::mir::MirProjection::All) {
@@ -506,30 +506,45 @@ impl SqlGenerator {
         }))
     }
 
-    fn generate_mir_join(&self, source_alias: &str, join: &crate::mir::MirJoin) -> Join {
+    fn generate_mir_join(&self, join: &crate::mir::MirJoin) -> Join {
         let target_table = self.mir_db.tables.values().find(|t| t.name == join.target_table)
             .expect("Target table not found");
         
         let target_table_name = self.get_table_object_name(target_table);
         let target_alias = join.relation_name.clone();
+        let source_alias = &join.source_alias;
 
         // Find the relation metadata to get join columns
-        let source_table = self.mir_db.tables.values().find(|t| t.name == source_alias || t.name == to_snake_case(source_alias))
+        let source_table = self.mir_db.tables.values().find(|t| t.name == join.source_table || t.name == to_snake_case(&join.source_table))
             .expect("Source table not found for join");
         
         let rel = source_table.relations.iter().find(|r| r.name == join.relation_name)
             .expect("Relation not found in source table");
 
-        let condition = Expr::BinaryOp {
-            left: Box::new(Expr::CompoundIdentifier(vec![
-                Ident::new(source_alias),
-                Ident::new(&rel.foreign_key_column),
-            ])),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::CompoundIdentifier(vec![
-                Ident::new(&target_alias),
-                Ident::new(&rel.target_column),
-            ])),
+        let condition = if rel.fk_on_target {
+            Expr::BinaryOp {
+                left: Box::new(Expr::CompoundIdentifier(vec![
+                    Ident::new(source_alias),
+                    Ident::new(&rel.target_column),
+                ])),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::CompoundIdentifier(vec![
+                    Ident::new(&target_alias),
+                    Ident::new(&rel.foreign_key_column),
+                ])),
+            }
+        } else {
+            Expr::BinaryOp {
+                left: Box::new(Expr::CompoundIdentifier(vec![
+                    Ident::new(source_alias),
+                    Ident::new(&rel.foreign_key_column),
+                ])),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::CompoundIdentifier(vec![
+                    Ident::new(&target_alias),
+                    Ident::new(&rel.target_column),
+                ])),
+            }
         };
 
         let join_operator = match join.join_type {
@@ -741,6 +756,32 @@ impl SqlGenerator {
                     let target_table_name = self.get_table_object_name(target_table);
                     let target_alias = rel.name.clone();
 
+                    let condition = if rel.fk_on_target {
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::CompoundIdentifier(vec![
+                                Ident::new(&table_alias),
+                                Ident::new(&rel.target_column),
+                            ])),
+                            op: sqlparser::ast::BinaryOperator::Eq,
+                            right: Box::new(Expr::CompoundIdentifier(vec![
+                                Ident::new(&target_alias),
+                                Ident::new(&rel.foreign_key_column),
+                            ])),
+                        }
+                    } else {
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::CompoundIdentifier(vec![
+                                Ident::new(&table_alias),
+                                Ident::new(&rel.foreign_key_column),
+                            ])),
+                            op: sqlparser::ast::BinaryOperator::Eq,
+                            right: Box::new(Expr::CompoundIdentifier(vec![
+                                Ident::new(&target_alias),
+                                Ident::new(&rel.target_column),
+                            ])),
+                        }
+                    };
+
                     joins.push(Join {
                         relation: TableFactor::Table {
                             name: target_table_name,
@@ -753,17 +794,7 @@ impl SqlGenerator {
                             version: None,
                             partitions: vec![],
                         },
-                        join_operator: JoinOperator::LeftOuter(JoinConstraint::On(Expr::BinaryOp {
-                            left: Box::new(Expr::CompoundIdentifier(vec![
-                                Ident::new(&table_alias),
-                                Ident::new(&rel.foreign_key_column),
-                            ])),
-                            op: sqlparser::ast::BinaryOperator::Eq,
-                            right: Box::new(Expr::CompoundIdentifier(vec![
-                                Ident::new(&target_alias),
-                                Ident::new(&rel.target_column),
-                            ])),
-                        })),
+                        join_operator: JoinOperator::LeftOuter(JoinConstraint::On(condition)),
                     });
                 }
             }
