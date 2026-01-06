@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS auth_schema.user (id INT NOT NULL AUTO_INCREMENT, name VARCHAR NOT NULL, email VARCHAR NOT NULL);;
+CREATE TABLE IF NOT EXISTS auth_schema.post (id INT NOT NULL, title VARCHAR NOT NULL, author_id INT NOT NULL, CONSTRAINT post_author_id_fk FOREIGN KEY (author_id) REFERENCES auth_schema.user(id));

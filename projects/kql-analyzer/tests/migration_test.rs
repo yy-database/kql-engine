@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_has;
 use kql_analyzer::mir::{MirProgram, Table, Column, ColumnType};
 use kql_analyzer::migration::{MigrationEngine, MigrationStep};
 
@@ -71,13 +73,9 @@ fn test_migration_diff() {
     // Generate SQL
     let gen = SqlGenerator::new(MirProgram::default(), SqlDialect::Postgres);
     let sqls = gen.generate_migration_sql(steps);
+    let all_sql = sqls.join(";\n");
 
-    for sql in &sqls {
-        println!("Migration SQL: {}", sql);
-    }
-
-    assert!(sqls.iter().any(|s| s.contains("ADD COLUMN") && s.contains("age")));
-    assert!(sqls.iter().any(|s| s.contains("DROP COLUMN") && s.contains("name")));
+    assert_sql_has(&all_sql, &["ADD COLUMN", "age", "DROP COLUMN", "name"]);
 }
 
 #[test]
@@ -137,10 +135,7 @@ fn test_migration_rename() {
 
     let gen = SqlGenerator::new(MirProgram::default(), SqlDialect::Postgres);
     let sqls = gen.generate_migration_sql(adjusted_steps);
+    let all_sql = sqls.join(";\n");
 
-    for sql in &sqls {
-        println!("Rename SQL: {}", sql);
-    }
-
-    assert!(sqls.iter().any(|s| s.contains("RENAME COLUMN name TO full_name")));
+    assert_sql_has(&all_sql, &["RENAME COLUMN name TO full_name"]);
 }

@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_eq;
 use kql_analyzer::hir::{HirProgram, HirStruct, HirField, HirType, HirId, HirExpr, HirExprKind, HirLet, PrimitiveType};
 use kql_analyzer::mir::mir_gen::MirLowerer;
 use kql_analyzer::lir::sql_gen::SqlGenerator;
@@ -137,7 +139,5 @@ fn test_auto_join_query_generation() {
     let sql_stmt = sql_gen.generate_mir_query(query);
     let sql_string = sql_stmt.to_string();
     
-    println!("Generated SQL: {}", sql_string);
-    assert!(sql_string.contains("FROM post AS post"));
-    assert!(sql_string.contains("LEFT JOIN user AS author ON post.user_id = author.id"));
+    assert_sql_eq(&sql_string, "query_auto_join_post_author");
 }

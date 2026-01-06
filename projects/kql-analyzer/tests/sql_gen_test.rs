@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_eq;
 use kql_parser::Parser;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::mir::mir_gen::MirLowerer;
@@ -37,23 +39,8 @@ fn test_sql_generation() {
     let sql_gen = SqlGenerator::new(mir, SqlDialect::Postgres);
     let sqls = sql_gen.generate_ddl_sql();
     
-    println!("Generated SQLs:");
-    for sql in &sqls {
-        println!("{}", sql);
-    }
-    
-    // Check User table
-    let user_sql = sqls.iter().find(|s| s.contains("auth_schema.user")).expect("User table not found");
-    assert!(user_sql.contains("CREATE TABLE IF NOT EXISTS auth_schema.user"));
-    assert!(user_sql.contains("id INT NOT NULL"));
-    assert!(user_sql.contains("name VARCHAR NOT NULL"));
-    assert!(user_sql.contains("email VARCHAR NOT NULL"));
-    
-    // Check Post table
-    let post_sql = sqls.iter().find(|s| s.contains("auth_schema.post")).expect("Post table not found");
-    assert!(post_sql.contains("CREATE TABLE IF NOT EXISTS auth_schema.post"));
-    assert!(post_sql.contains("author_id INT NOT NULL"));
-    assert!(post_sql.contains("CONSTRAINT post_author_id_fk FOREIGN KEY (author_id) REFERENCES auth_schema.user(id)"));
+    let all_sql = sqls.join(";\n");
+    assert_sql_eq(&all_sql, "ddl_auth_schema");
 }
 
 #[test]
@@ -105,6 +92,6 @@ fn test_aggregation_sql_generation() {
     };
     
     let sql_expr = sql_gen.generate_expr(&avg_call);
-    let sql_string = sql_expr.to_string();
-    assert_eq!(sql_string, "avg(price)");
+    let sql_string = format!("SELECT {}", sql_expr.to_string());
+    assert_sql_eq(&sql_string, "expr_avg_price");
 }

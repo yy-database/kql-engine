@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_eq;
 use kql_parser::parser::Parser;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::mir::mir_gen::MirLowerer;
@@ -34,19 +36,10 @@ fn test_window_function() {
 
     let sql_gen = SqlGenerator::new(mir.clone(), kql_analyzer::lir::SqlDialect::Postgres);
     
-    let mut sql_queries = std::collections::HashMap::new();
-    for (name, query) in &mir.queries {
-        let stmt = sql_gen.generate_mir_query(query);
-        sql_queries.insert(name.clone(), format!("{}", stmt));
-    }
-
-    let sql = &sql_queries["db::user_rank"];
+    let q = &mir.queries["db::user_rank"];
+    let sql = sql_gen.generate_mir_query(q).to_string();
+    
     println!("Generated SQL: {}", sql);
 
-    // Verify SQL contains OVER clause
-    assert!(sql.contains("SELECT"));
-    assert!(sql.contains("name"));
-    assert!(sql.contains("score"));
-    assert!(sql.contains("count(user.score) OVER (PARTITION BY user.city ORDER BY user.score DESC)") || 
-            sql.contains("count(score) OVER (PARTITION BY city ORDER BY score DESC)"));
+    assert_sql_eq(&sql, "window_function_user_rank");
 }

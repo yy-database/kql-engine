@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_eq;
 use kql_parser::Parser;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::mir::mir_gen::MirLowerer;
@@ -46,20 +48,11 @@ fn test_complex_join_query() {
     
     let sql_gen = SqlGenerator::new(mir.clone(), SqlDialect::Postgres);
     
-    println!("Available queries: {:?}", mir.queries.keys());
     // Check if query exists
     let query = mir.queries.get("db::user_posts_with_comments").expect("Query not found");
     
     let sql_stmt = sql_gen.generate_mir_query(query);
     let sql = sql_stmt.to_string();
-    println!("--- SQL ---\n{}", sql);
 
-    // Verify JOINs
-    // User is the source, posts is joined to User, comments is joined to posts
-    assert!(sql.contains("FROM user AS user"));
-    assert!(sql.contains("LEFT JOIN post AS posts ON user.id = posts.author_id"));
-    assert!(sql.contains("LEFT JOIN comment AS comments ON posts.id = comments.post_id"));
-    
-    // Verify Filter with alias
-    assert!(sql.contains("WHERE comments.content = 'nice'"));
+    assert_sql_eq(&sql, "join_user_posts_comments_filter");
 }

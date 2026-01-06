@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_eq;
 use kql_parser::Parser;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::mir::mir_gen::MirLowerer;
@@ -35,19 +37,15 @@ fn test_aggregate_query() {
     // 1. Test count(*)
     let q1 = mir.queries.get("db::total_products").expect("Query total_products not found");
     let sql1 = sql_gen.generate_mir_query(q1).to_string();
-    println!("SQL 1: {}", sql1);
-    assert!(sql1.contains("SELECT count(*) FROM product AS product"));
+    assert_sql_eq(&sql1, "aggregate_total_products");
 
     // 2. Test avg(price)
     let q2 = mir.queries.get("db::avg_price").expect("Query avg_price not found");
     let sql2 = sql_gen.generate_mir_query(q2).to_string();
-    println!("SQL 2: {}", sql2);
-    assert!(sql2.contains("SELECT avg(product.price) FROM product AS product") || sql2.contains("SELECT avg(price) FROM product AS product"));
+    assert_sql_eq(&sql2, "aggregate_avg_price");
 
     // 3. Test multiple aggregates
     let q3 = mir.queries.get("db::category_stats").expect("Query category_stats not found");
     let sql3 = sql_gen.generate_mir_query(q3).to_string();
-    println!("SQL 3: {}", sql3);
-    // category might or might not have product. prefix depending on how it was lowered
-    assert!(sql3.contains("count(*)") && sql3.contains("sum(product.price)") && sql3.contains("max(product.price)") && sql3.contains("min(product.price)"));
+    assert_sql_eq(&sql3, "aggregate_category_stats");
 }

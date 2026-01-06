@@ -1,0 +1,1 @@
+SELECT category, count(*), sum(product.price), max(product.price), min(product.price) FROM product AS product

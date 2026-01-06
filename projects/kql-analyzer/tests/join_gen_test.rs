@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_has;
 use kql_parser::Parser;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::mir::mir_gen::MirLowerer;
@@ -43,10 +45,11 @@ fn test_auto_join_generation() {
     let select_sql = sql_gen.generate_select(post_table, &["author"]);
     
     let sql_string = format!("{};", select_sql);
-    println!("Generated SQL: {}", sql_string);
     
-    assert!(sql_string.contains("SELECT * FROM public.post AS post"));
-    assert!(sql_string.contains("LEFT JOIN public.user AS author ON post.user_id = author.id"));
+    assert_sql_has(&sql_string, &[
+        "SELECT * FROM public.post AS post",
+        "LEFT JOIN public.user AS author ON post.user_id = author.id"
+    ]);
 }
 
 #[test]
@@ -87,14 +90,10 @@ fn test_many_to_many_join_generation() {
     let select_sql = sql_gen.generate_select(user_table, &["roles"]);
     
     let sql_string = format!("{};", select_sql);
-    println!("Generated SQL: {}", sql_string);
     
-    // Expected SQL for many-to-many:
-    // SELECT * FROM public.user AS user 
-    // LEFT JOIN public.user_roles AS user_roles ON user.id = user_roles.user_id
-    // LEFT JOIN public.role AS roles ON user_roles.role_id = roles.id
-    
-    assert!(sql_string.contains("SELECT * FROM public.user AS user"));
-    assert!(sql_string.contains("LEFT JOIN public.user_roles AS user_roles ON user.id = user_roles.user_id"));
-    assert!(sql_string.contains("LEFT JOIN public.role AS roles ON user_roles.role_id = roles.id"));
+    assert_sql_has(&sql_string, &[
+        "SELECT * FROM public.user AS user",
+        "LEFT JOIN public.user_roles AS user_roles ON user.id = user_roles.user_id",
+        "LEFT JOIN public.role AS roles ON user_roles.role_id = roles.id"
+    ]);
 }

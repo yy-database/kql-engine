@@ -1,0 +1,1 @@
+SELECT name, score, count(user.score) OVER (PARTITION BY user.city ORDER BY user.score DESC) FROM user AS user

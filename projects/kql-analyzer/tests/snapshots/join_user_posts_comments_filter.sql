@@ -1,0 +1,1 @@
+SELECT * FROM user AS user LEFT JOIN post AS posts ON user.id = posts.author_id LEFT JOIN comment AS comments ON posts.id = comments.post_id WHERE comments.content = 'nice'

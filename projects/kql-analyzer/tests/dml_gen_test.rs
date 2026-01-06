@@ -1,7 +1,7 @@
+mod common;
+use common::{assert_sql_eq, assert_sql_has};
 use kql_analyzer::lir::{SqlGenerator, SqlDialect};
 use kql_analyzer::mir::{MirProgram, Table, Column, ColumnType};
-use sqlparser::dialect::PostgreSqlDialect;
-use sqlparser::parser::Parser;
 
 #[test]
 fn test_insert_generation() {
@@ -37,7 +37,7 @@ fn test_insert_generation() {
     let sql = format!("{};", insert);
     
     // id should be skipped because it's auto_increment
-    assert!(sql.contains("INSERT INTO auth.users (name) VALUES (?)"));
+    assert_sql_has(&sql, &["INSERT INTO auth.users (name) VALUES (?)"]);
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn test_update_by_pk_generation() {
     let update = gen.generate_update_by_pk(&table).unwrap();
     let sql = format!("{};", update);
     
-    assert!(sql.contains("UPDATE auth.users SET name = ? WHERE id = ?"));
+    assert_sql_has(&sql, &["UPDATE auth.users SET name = ? WHERE id = ?"]);
 }
 
 #[test]
@@ -102,5 +102,5 @@ fn test_delete_by_pk_generation() {
     let delete = gen.generate_delete_by_pk(&table).unwrap();
     let sql = format!("{};", delete);
     
-    assert!(sql.contains("DELETE FROM auth.users WHERE id = ?"));
+    assert_sql_has(&sql, &["DELETE FROM auth.users WHERE id = ?"]);
 }

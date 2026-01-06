@@ -1,0 +1,1 @@
+SELECT avg(product.price) FROM product AS product

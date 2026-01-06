@@ -703,7 +703,7 @@ impl SqlGenerator {
                 crate::mir::MirLiteral::String(s) => Expr::Value(Value::SingleQuotedString(s.clone())),
                 crate::mir::MirLiteral::Bool(b) => Expr::Value(Value::Boolean(*b)),
                 crate::mir::MirLiteral::Null => Expr::Value(Value::Null),
-                crate::mir::MirLiteral::Star => Expr::Value(Value::Placeholder("*".to_string())), // This is tricky, Star is usually not an Expr on its own except in count(*)
+                crate::mir::MirLiteral::Star => Expr::Value(Value::SingleQuotedString("*".to_string())), // Better fallback than Placeholder
             },
             crate::mir::MirExpr::Binary { left, op, right } => Expr::BinaryOp {
                 left: Box::new(self.generate_mir_expr(left)),

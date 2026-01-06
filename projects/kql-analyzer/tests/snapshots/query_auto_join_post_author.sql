@@ -1,0 +1,1 @@
+SELECT * FROM post AS post LEFT JOIN user AS author ON post.user_id = author.id
