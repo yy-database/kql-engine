@@ -131,12 +131,11 @@ impl LanguageServer for KqlLanguageServer {
         
         // Get full text from changes
         if let Some(change) = params.content_changes.first() {
-            if let Some(text) = &change.text {
-                let diagnostics = self.parse_and_get_diagnostics(text);
-                self.client
-                    .publish_diagnostics(uri, diagnostics, None)
-                    .await;
-            }
+            let text = &change.text;
+            let diagnostics = self.parse_and_get_diagnostics(text);
+            self.client
+                .publish_diagnostics(uri, diagnostics, None)
+                .await;
         }
     }
 
@@ -190,7 +189,7 @@ impl LanguageServer for KqlLanguageServer {
             // Types
             CompletionItem {
                 label: "Key".to_string(),
-                kind: Some(CompletionItemKind::TYPE),
+                kind: Some(CompletionItemKind::VALUE),
                 detail: Some("Primary key type".to_string()),
                 insert_text: Some("Key<${1:i32}>".to_string()),
                 insert_text_format: Some(InsertTextFormat::SNIPPET),
@@ -198,7 +197,7 @@ impl LanguageServer for KqlLanguageServer {
             },
             CompletionItem {
                 label: "ForeignKey".to_string(),
-                kind: Some(CompletionItemKind::TYPE),
+                kind: Some(CompletionItemKind::VALUE),
                 detail: Some("Foreign key type".to_string()),
                 insert_text: Some("ForeignKey<${1:Entity}>".to_string()),
                 insert_text_format: Some(InsertTextFormat::SNIPPET),
@@ -206,25 +205,25 @@ impl LanguageServer for KqlLanguageServer {
             },
             CompletionItem {
                 label: "String".to_string(),
-                kind: Some(CompletionItemKind::TYPE),
+                kind: Some(CompletionItemKind::VALUE),
                 detail: Some("String primitive".to_string()),
                 ..Default::default()
             },
             CompletionItem {
                 label: "i32".to_string(),
-                kind: Some(CompletionItemKind::TYPE),
+                kind: Some(CompletionItemKind::VALUE),
                 detail: Some("32-bit integer".to_string()),
                 ..Default::default()
             },
             CompletionItem {
                 label: "i64".to_string(),
-                kind: Some(CompletionItemKind::TYPE),
+                kind: Some(CompletionItemKind::VALUE),
                 detail: Some("64-bit integer".to_string()),
                 ..Default::default()
             },
             CompletionItem {
                 label: "f64".to_string(),
-                kind: Some(CompletionItemKind::TYPE),
+                kind: Some(CompletionItemKind::VALUE),
                 detail: Some("64-bit float".to_string()),
                 ..Default::default()
             },
@@ -370,7 +369,10 @@ let active_users = User.filter { $.status == "active" }
 "#.to_string(),
         };
 
-        Ok(Some(Hover { contents, range: None }))
+        Ok(Some(Hover {
+            contents: HoverContents::Markup(contents),
+            range: None,
+        }))
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {

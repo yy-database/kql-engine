@@ -1,0 +1,9 @@
+node_modules
+out/test
+src/**/*.ts
+src/**/*.map
+.vscode/**
+.gitignore
+tsconfig.json
+*.log
+.DS_Store

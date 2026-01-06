@@ -1,4 +1,4 @@
-use tower_lsp::{Client, LspService, Server};
+use tower_lsp::{LspService, Server};
 use kql_lsp::KqlLanguageServer;
 
 #[tokio::main]

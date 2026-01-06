@@ -1,0 +1,90 @@
+{
+  "name": "kql-vscode",
+  "displayName": "KQL Language Support",
+  "description": "Language support for KQL (Query with ADTs Language)",
+  "version": "0.0.0",
+  "publisher": "kql-team",
+  "license": "MPL-2.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "keywords": [
+    "kql",
+    "database",
+    "orm",
+    "query",
+    "language",
+    "lsp"
+  ],
+  "activationEvents": [
+    "onLanguage:kql"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "kql",
+        "aliases": [
+          "KQL",
+          "kql"
+        ],
+        "extensions": [
+          ".kql",
+          ".kqlx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kql",
+        "scopeName": "source.kql",
+        "path": "./syntaxes/kql.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "KQL",
+      "properties": {
+        "kql.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable KQL Language Server"
+        },
+        "kql.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to kql-lsp binary (empty for bundled)"
+        },
+        "kql.format.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable KQL formatting"
+        },
+        "kql.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable KQL diagnostics"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {}
+}

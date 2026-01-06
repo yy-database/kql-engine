@@ -55,7 +55,7 @@ pub fn get_type_completions() -> Vec<CompletionItem> {
         // Key types
         CompletionItem {
             label: "Key".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("Primary key type".to_string()),
             insert_text: Some("Key<${1:i32}>".to_string()),
             insert_text_format: Some(InsertTextFormat::SNIPPET),
@@ -63,7 +63,7 @@ pub fn get_type_completions() -> Vec<CompletionItem> {
         },
         CompletionItem {
             label: "ForeignKey".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("Foreign key type".to_string()),
             insert_text: Some("ForeignKey<${1:Entity}>".to_string()),
             insert_text_format: Some(InsertTextFormat::SNIPPET),
@@ -72,56 +72,56 @@ pub fn get_type_completions() -> Vec<CompletionItem> {
         // Primitives
         CompletionItem {
             label: "String".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("String primitive".to_string()),
             ..Default::default()
         },
         CompletionItem {
             label: "i32".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("32-bit integer".to_string()),
             ..Default::default()
         },
         CompletionItem {
             label: "i64".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("64-bit integer".to_string()),
             ..Default::default()
         },
         CompletionItem {
             label: "f32".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("32-bit float".to_string()),
             ..Default::default()
         },
         CompletionItem {
             label: "f64".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("64-bit float".to_string()),
             ..Default::default()
         },
         CompletionItem {
             label: "bool".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("Boolean".to_string()),
             ..Default::default()
         },
         CompletionItem {
             label: "DateTime".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("Date and time".to_string()),
             ..Default::default()
         },
         CompletionItem {
             label: "UUID".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("UUID".to_string()),
             ..Default::default()
         },
         // Special types
         CompletionItem {
             label: "List".to_string(),
-            kind: Some(CompletionItemKind::TYPE),
+            kind: Some(CompletionItemKind::VALUE),
             detail: Some("List type".to_string()),
             insert_text: Some("List<${1:Type}>".to_string()),
             insert_text_format: Some(InsertTextFormat::SNIPPET),
