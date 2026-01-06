@@ -429,6 +429,27 @@ impl<'a> Parser<'a> {
                 self.expect(TokenKind::RParen)?;
                 Ok(expr)
             }
+            TokenKind::Star => {
+                let span = self.curr.span.clone();
+                self.advance();
+                Ok(Expr::Literal(LiteralExpr { kind: LiteralKind::Star, span }))
+            }
+            TokenKind::LBracket => {
+                let start_span = self.curr.span.clone();
+                self.advance();
+                let mut elements = Vec::new();
+                while self.curr.kind != TokenKind::RBracket && self.curr.kind != TokenKind::EOF {
+                    elements.push(self.parse_expression(Precedence::None)?);
+                    if !self.consume(TokenKind::Comma) && self.curr.kind != TokenKind::RBracket {
+                        break;
+                    }
+                }
+                let end_span = self.expect(TokenKind::RBracket)?.span;
+                Ok(Expr::List(ListExpr {
+                    elements,
+                    span: Span { start: start_span.start, end: end_span.end },
+                }))
+            }
             _ => Err(KqlError::parse(token.span, format!("Unexpected token in prefix position: {:?}", token.kind))),
         }
     }
@@ -480,7 +501,16 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let mut args = Vec::new();
                 while self.curr.kind != TokenKind::RParen && self.curr.kind != TokenKind::EOF {
-                    args.push(self.parse_expression(Precedence::None)?);
+                    if self.curr.kind == TokenKind::Ident && self.peek.kind == TokenKind::Colon {
+                        let name = self.parse_ident()?;
+                        self.expect(TokenKind::Colon)?;
+                        let value = self.parse_expression(Precedence::None)?;
+                        let span = Span { start: name.span.start, end: value.span().end };
+                        args.push(Argument::Named(NamedArgument { name, value, span }));
+                    } else {
+                        args.push(Argument::Positional(self.parse_expression(Precedence::None)?));
+                    }
+                    
                     if !self.consume(TokenKind::Comma) && self.curr.kind != TokenKind::RParen {
                         break;
                     }
@@ -493,6 +523,74 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let member = self.parse_ident()?;
                 let span = Span { start: left.span().start, end: member.span.end };
+                
+                if member.name == "over" && self.curr.kind == TokenKind::LParen {
+                    let start_pos = left.span().start;
+                    self.advance(); // (
+                    let mut partition_by = Vec::new();
+                    let mut order_by = Vec::new();
+                    
+                    while self.curr.kind != TokenKind::RParen && self.curr.kind != TokenKind::EOF {
+                        let name = self.parse_ident()?;
+                        self.expect(TokenKind::Colon)?;
+                        
+                        match name.name.as_str() {
+                            "partition_by" => {
+                                let val = self.parse_expression(Precedence::None)?;
+                                if let Expr::List(l) = val {
+                                    partition_by = l.elements;
+                                } else {
+                                    partition_by.push(val);
+                                }
+                            }
+                            "order_by" => {
+                                let val = self.parse_expression(Precedence::None)?;
+                                let elements = if let Expr::List(l) = val {
+                                    l.elements
+                                } else {
+                                    vec![val]
+                                };
+                                
+                                for e in elements {
+                                    let mut desc = false;
+                                    let mut final_expr = e;
+                                    
+                                    // Check for .desc()
+                                    if let Expr::Call(c) = &final_expr {
+                                        if let Expr::Member(m) = &*c.func {
+                                            if m.member.name == "desc" {
+                                                desc = true;
+                                                final_expr = *m.object.clone();
+                                            }
+                                        }
+                                    }
+                                    
+                                    order_by.push(OrderByExpr {
+                                        span: final_expr.span(),
+                                        expr: Box::new(final_expr),
+                                        desc,
+                                    });
+                                }
+                            }
+                            _ => {
+                                return Err(KqlError::parse(name.span, format!("Unexpected window argument: {}", name.name)));
+                            }
+                        }
+                        
+                        if !self.consume(TokenKind::Comma) && self.curr.kind != TokenKind::RParen {
+                            break;
+                        }
+                    }
+                    
+                    let end_span = self.expect(TokenKind::RParen)?.span;
+                    return Ok(Expr::Window(WindowExpr {
+                        expr: Box::new(left),
+                        partition_by,
+                        order_by,
+                        span: Span { start: start_pos, end: end_span.end },
+                    }));
+                }
+                
                 Ok(Expr::Member(MemberExpr { object: Box::new(left), member, span }))
             }
             _ => Ok(left),

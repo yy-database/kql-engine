@@ -2,6 +2,7 @@ use clap::Args;
 use kql_parser::Parser;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::codegen::RustGenerator;
+use kql_analyzer::lir::SqlDialect;
 use kql_types::Result;
 use std::path::PathBuf;
 
@@ -15,6 +16,9 @@ pub struct GenerateArgs {
     /// Language to generate (currently only 'rust')
     #[arg(short, long, default_value = "rust")]
     pub lang: String,
+    /// Database dialect for code generation (postgres, mysql, sqlite)
+    #[arg(short, long, default_value = "postgres")]
+    pub dialect: String,
 }
 
 impl GenerateArgs {
@@ -29,7 +33,13 @@ impl GenerateArgs {
         let hir = lowerer.lower_program(&ast)?;
         
         if self.lang == "rust" {
-            let generator = RustGenerator::new(hir);
+            let dialect = match self.dialect.to_lowercase().as_str() {
+                "postgres" => SqlDialect::Postgres,
+                "mysql" => SqlDialect::MySql,
+                "sqlite" => SqlDialect::Sqlite,
+                _ => return Err(kql_types::KqlError::cli(format!("Unsupported dialect: {}", self.dialect))),
+            };
+            let generator = RustGenerator::new(hir, dialect);
             let code = generator.generate();
             
             if let Some(output_path) = &self.output {

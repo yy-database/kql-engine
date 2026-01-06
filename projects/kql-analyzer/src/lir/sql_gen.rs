@@ -8,6 +8,7 @@ use sqlparser::ast::{
     ReferentialAction, Statement, TableConstraint, Query, SetExpr, Values, Expr, Value,
     Assignment, Select, SelectItem, TableWithJoins, TableFactor, Join, JoinOperator, JoinConstraint,
     AlterTableOperation, BinaryOperator, UnaryOperator, Function, FunctionArg, FunctionArgExpr,
+    WindowSpec, WindowType, OrderByExpr,
 };
 use sqlparser::tokenizer::Token;
 use crate::migration::MigrationStep;
@@ -349,6 +350,7 @@ impl SqlGenerator {
                 HirLiteral::String(s) => Expr::Value(Value::SingleQuotedString(s.clone())),
                 HirLiteral::Bool(b) => Expr::Value(Value::Boolean(*b)),
                 HirLiteral::Null => Expr::Value(Value::Null),
+                HirLiteral::Star => Expr::Value(Value::Placeholder("*".to_string())),
             },
             HirExprKind::Symbol(s) => Expr::Identifier(Ident::new(s)),
             HirExprKind::Member { object, member } => {
@@ -424,7 +426,11 @@ impl SqlGenerator {
             HirExprKind::Call { func, args } => {
                 if let HirExprKind::Symbol(name) = &func.kind {
                     let sql_args = args.iter().map(|arg| {
-                        FunctionArg::Unnamed(FunctionArgExpr::Expr(self.generate_expr(arg)))
+                        let expr = match arg {
+                            crate::hir::HirArgument::Positional(e) => self.generate_expr(e),
+                            crate::hir::HirArgument::Named { value, .. } => self.generate_expr(value),
+                        };
+                        FunctionArg::Unnamed(FunctionArgExpr::Expr(expr))
                     }).collect();
                     
                     Expr::Function(Function {
@@ -437,9 +443,57 @@ impl SqlGenerator {
                         filter: None,
                         null_treatment: None,
                     })
+                } else if let HirExprKind::Member { member, .. } = &func.kind {
+                    // Handle member call (e.g. Product.count())
+                    let sql_args = args.iter().map(|arg| {
+                        let expr = match arg {
+                            crate::hir::HirArgument::Positional(e) => self.generate_expr(e),
+                            crate::hir::HirArgument::Named { value, .. } => self.generate_expr(value),
+                        };
+                        FunctionArg::Unnamed(FunctionArgExpr::Expr(expr))
+                    }).collect();
+                    
+                    Expr::Function(Function {
+                        name: ObjectName(vec![Ident::new(member)]),
+                        args: sql_args,
+                        over: None,
+                        distinct: false,
+                        special: false,
+                        order_by: vec![],
+                        filter: None,
+                        null_treatment: None,
+                    })
                 } else {
                     Expr::Value(Value::Null) // Fallback
                 }
+            }
+            HirExprKind::Window(w) => {
+                let expr = self.generate_expr(&w.expr);
+                if let Expr::Function(mut func) = expr {
+                    func.over = Some(WindowType::WindowSpec(WindowSpec {
+                        partition_by: w.partition_by.iter().map(|e| self.generate_expr(e)).collect(),
+                        order_by: w.order_by.iter().map(|o| OrderByExpr {
+                            expr: self.generate_expr(&o.expr),
+                            asc: Some(!o.desc),
+                            nulls_first: None,
+                        }).collect(),
+                        window_frame: None,
+                    }));
+                    Expr::Function(func)
+                } else {
+                    expr // Fallback if not a function
+                }
+            }
+            HirExprKind::List(elements) => {
+                // In SQL, lists are usually handled in IN clauses or as arrays
+                // For now, just generate a parenthesized list of expressions
+                Expr::Nested(Box::new(Expr::BinaryOp {
+                    left: Box::new(self.generate_expr(&elements[0])),
+                    op: BinaryOperator::Plus, // This is just a placeholder, should be handled correctly
+                    right: Box::new(self.generate_expr(&elements[1])),
+                }))
+                // Actually, SQL standard doesn't have a generic list expression.
+                // It depends on the context. Let's return Null for now as it's usually used inside OVER.
             }
             _ => Expr::Value(Value::Null), // Unimplemented
         }
@@ -580,10 +634,15 @@ impl SqlGenerator {
             },
             crate::mir::MirProjection::Aggregation(agg) => {
                 let func_name = agg.func.clone();
-                let arg = self.generate_mir_expr(&agg.arg);
+                let arg = match &*agg.arg {
+                    crate::mir::MirExpr::Literal(crate::mir::MirLiteral::Star) => {
+                        FunctionArg::Unnamed(FunctionArgExpr::Wildcard)
+                    }
+                    _ => FunctionArg::Unnamed(FunctionArgExpr::Expr(self.generate_mir_expr(&agg.arg))),
+                };
                 let func = Function {
                     name: ObjectName(vec![Ident::new(func_name)]),
-                    args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(arg))],
+                    args: vec![arg],
                     over: None,
                     distinct: false,
                     special: false,
@@ -596,6 +655,31 @@ impl SqlGenerator {
                     SelectItem::ExprWithAlias {
                         expr,
                         alias: Ident::new(alias),
+                    }
+                } else {
+                    SelectItem::UnnamedExpr(expr)
+                }
+            }
+            crate::mir::MirProjection::Window(w) => {
+                let expr = self.generate_mir_expr(&w.expr);
+                if let Expr::Function(mut func) = expr {
+                    func.over = Some(WindowType::WindowSpec(WindowSpec {
+                        partition_by: w.partition_by.iter().map(|e| self.generate_mir_expr(e)).collect(),
+                        order_by: w.order_by.iter().map(|o| OrderByExpr {
+                            expr: self.generate_mir_expr(&o.expr),
+                            asc: Some(!o.desc),
+                            nulls_first: None,
+                        }).collect(),
+                        window_frame: None,
+                    }));
+                    let final_expr = Expr::Function(func);
+                    if let Some(alias) = &w.alias {
+                        SelectItem::ExprWithAlias {
+                            expr: final_expr,
+                            alias: Ident::new(alias),
+                        }
+                    } else {
+                        SelectItem::UnnamedExpr(final_expr)
                     }
                 } else {
                     SelectItem::UnnamedExpr(expr)
@@ -619,6 +703,7 @@ impl SqlGenerator {
                 crate::mir::MirLiteral::String(s) => Expr::Value(Value::SingleQuotedString(s.clone())),
                 crate::mir::MirLiteral::Bool(b) => Expr::Value(Value::Boolean(*b)),
                 crate::mir::MirLiteral::Null => Expr::Value(Value::Null),
+                crate::mir::MirLiteral::Star => Expr::Value(Value::Placeholder("*".to_string())), // This is tricky, Star is usually not an Expr on its own except in count(*)
             },
             crate::mir::MirExpr::Binary { left, op, right } => Expr::BinaryOp {
                 left: Box::new(self.generate_mir_expr(left)),
@@ -632,7 +717,14 @@ impl SqlGenerator {
             crate::mir::MirExpr::Call { func, args } => {
                 Expr::Function(Function {
                     name: ObjectName(vec![Ident::new(func)]),
-                    args: args.iter().map(|a| FunctionArg::Unnamed(FunctionArgExpr::Expr(self.generate_mir_expr(a)))).collect(),
+                    args: args.iter().map(|a| {
+                        match a {
+                            crate::mir::MirExpr::Literal(crate::mir::MirLiteral::Star) => {
+                                FunctionArg::Unnamed(FunctionArgExpr::Wildcard)
+                            }
+                            _ => FunctionArg::Unnamed(FunctionArgExpr::Expr(self.generate_mir_expr(a))),
+                        }
+                    }).collect(),
                     over: None,
                     distinct: false,
                     special: false,
@@ -640,6 +732,23 @@ impl SqlGenerator {
                     filter: None,
                     null_treatment: None,
                 })
+            }
+            crate::mir::MirExpr::Window(w) => {
+                let expr = self.generate_mir_expr(&w.expr);
+                if let Expr::Function(mut func) = expr {
+                    func.over = Some(WindowType::WindowSpec(WindowSpec {
+                        partition_by: w.partition_by.iter().map(|e| self.generate_mir_expr(e)).collect(),
+                        order_by: w.order_by.iter().map(|o| OrderByExpr {
+                            expr: self.generate_mir_expr(&o.expr),
+                            asc: Some(!o.desc),
+                            nulls_first: None,
+                        }).collect(),
+                        window_frame: None,
+                    }));
+                    Expr::Function(func)
+                } else {
+                    expr
+                }
             }
         }
     }

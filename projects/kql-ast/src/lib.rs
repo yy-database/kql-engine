@@ -20,6 +20,8 @@ pub enum Expr {
     Variable(VariableExpr),
     Call(CallExpr),
     Member(MemberExpr),
+    Window(WindowExpr),
+    List(ListExpr),
 }
 
 impl AstNode for Expr {
@@ -31,6 +33,8 @@ impl AstNode for Expr {
             Expr::Variable(e) => e.span,
             Expr::Call(e) => e.span,
             Expr::Member(e) => e.span,
+            Expr::Window(e) => e.span,
+            Expr::List(e) => e.span,
         }
     }
 }
@@ -49,6 +53,7 @@ pub enum LiteralKind {
     String(String),
     Boolean(bool),
     Null,
+    Star,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,9 +121,31 @@ pub struct VariableExpr {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ListExpr {
+    pub elements: Vec<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CallExpr {
     pub func: Box<Expr>,
-    pub args: Vec<Expr>,
+    pub args: Vec<Argument>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Argument {
+    Positional(Expr),
+    Named(NamedArgument),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct NamedArgument {
+    pub name: Ident,
+    pub value: Expr,
     pub span: Span,
 }
 
@@ -127,6 +154,23 @@ pub struct CallExpr {
 pub struct MemberExpr {
     pub object: Box<Expr>,
     pub member: Ident,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct WindowExpr {
+    pub expr: Box<Expr>,
+    pub partition_by: Vec<Expr>,
+    pub order_by: Vec<OrderByExpr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct OrderByExpr {
+    pub expr: Box<Expr>,
+    pub desc: bool,
     pub span: Span,
 }
 

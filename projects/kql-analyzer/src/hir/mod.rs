@@ -71,9 +71,33 @@ pub enum HirExprKind {
     Unary { op: HirUnaryOp, expr: Box<HirExpr> },
     Variable(HirId),
     Symbol(String),
-    Call { func: Box<HirExpr>, args: Vec<HirExpr> },
+    Call { func: Box<HirExpr>, args: Vec<HirArgument> },
     Member { object: Box<HirExpr>, member: String },
     Cast { expr: Box<HirExpr>, target_ty: HirType },
+    List(Vec<HirExpr>),
+    Window(HirWindowExpr),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum HirArgument {
+    Positional(HirExpr),
+    Named { name: String, value: HirExpr },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirWindowExpr {
+    pub expr: Box<HirExpr>,
+    pub partition_by: Vec<HirExpr>,
+    pub order_by: Vec<HirOrderByExpr>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirOrderByExpr {
+    pub expr: Box<HirExpr>,
+    pub desc: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,6 +108,7 @@ pub enum HirLiteral {
     String(String),
     Bool(bool),
     Null,
+    Star,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -42,6 +42,21 @@ pub enum MirProjection {
     Field(String),
     Alias(String, Box<MirExpr>),
     Aggregation(MirAggregation),
+    Window(MirWindow),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MirWindow {
+    pub expr: Box<MirExpr>,
+    pub partition_by: Vec<MirExpr>,
+    pub order_by: Vec<MirOrderBy>,
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MirOrderBy {
+    pub expr: Box<MirExpr>,
+    pub desc: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,6 +73,7 @@ pub enum MirExpr {
     Binary { left: Box<MirExpr>, op: MirBinaryOp, right: Box<MirExpr> },
     Unary { op: MirUnaryOp, expr: Box<MirExpr> },
     Call { func: String, args: Vec<MirExpr> },
+    Window(MirWindow),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -67,6 +83,7 @@ pub enum MirLiteral {
     String(String),
     Bool(bool),
     Null,
+    Star,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

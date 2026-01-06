@@ -759,6 +759,9 @@ impl Lowerer {
                     ast::LiteralKind::Null => {
                         (HirExprKind::Literal(HirLiteral::Null), HirType::Null)
                     }
+                    ast::LiteralKind::Star => {
+                        (HirExprKind::Literal(HirLiteral::Star), HirType::Primitive(PrimitiveType::I32))
+                    }
                 };
                 Ok(HirExpr { kind, ty, span: l.span })
             }
@@ -893,23 +896,61 @@ impl Lowerer {
                 Ok(HirExpr { kind: HirExprKind::Unary { op, expr: Box::new(expr) }, ty, span: u.span })
             }
             ast::Expr::Call(c) => {
-                let func = self.lower_expr(*c.func)?;
+                let mut func = self.lower_expr(*c.func)?;
                 let mut args = Vec::new();
+
+                // If this is a member call like score.count(), transform it to count(score)
+                // But only if the object is not a struct/table (which would be a query method)
+                if let HirExprKind::Member { object, member } = &func.kind {
+                    if ["count", "sum", "avg", "max", "min"].contains(&member.as_str()) {
+                        let is_query_method = match &object.ty {
+                            HirType::Struct(_) => true,
+                            _ => false,
+                        };
+
+                        if !is_query_method {
+                            args.push(HirArgument::Positional(*object.clone()));
+                            // Change func to be just the symbol of the aggregation function
+                            func = HirExpr {
+                                kind: HirExprKind::Symbol(member.clone()),
+                                ty: HirType::Unknown,
+                                span: func.span,
+                            };
+                        }
+                    }
+                }
+
                 for a in c.args {
-                    args.push(self.lower_expr(a)?);
+                    match a {
+                        ast::Argument::Positional(e) => {
+                            args.push(HirArgument::Positional(self.lower_expr(e)?));
+                        }
+                        ast::Argument::Named(n) => {
+                            args.push(HirArgument::Named {
+                                name: n.name.name,
+                                value: self.lower_expr(n.value)?,
+                            });
+                        }
+                    }
                 }
                 
+                // Helper to get positional expressions
+                let positional_args: Vec<HirExpr> = args.iter().filter_map(|a| match a {
+                    HirArgument::Positional(e) => Some(e.clone()),
+                    _ => None,
+                }).collect();
+
                 let ty = match &func.ty {
                     HirType::Struct(id) => {
                         // Validate arguments against struct fields
                         if let Some(s) = self.db.structs.get(id) {
-                            if args.len() != s.fields.len() {
+                            if positional_args.len() != s.fields.len() {
                                 self.errors.push(KqlError::semantic(
                                     c.span,
-                                    format!("Struct '{}' expects {} arguments, but {} were provided", s.name, s.fields.len(), args.len()),
+                                    format!("Struct '{}' expects {} arguments, but {} were provided", s.name, s.fields.len(), positional_args.len()),
                                 ));
                             } else {
-                                for (i, (arg, field)) in args.iter().zip(s.fields.iter()).enumerate() {
+                                for (i, (arg, field)) in positional_args.iter().zip(s.fields.iter()).enumerate() {
                                     if !self.can_assign(&field.ty, &arg.ty) {
                                         self.errors.push(KqlError::semantic(
                                             arg.span,
@@ -927,13 +968,13 @@ impl Lowerer {
                             if let Some(e) = self.db.enums.get(id) {
                                 if let Some(v) = e.variants.iter().find(|v| v.name == *member) {
                                     if let Some(fields) = &v.fields {
-                                        if args.len() != fields.len() {
+                                        if positional_args.len() != fields.len() {
                                             self.errors.push(KqlError::semantic(
                                                 c.span,
-                                                format!("Enum variant '{}::{}' expects {} arguments, but {} were provided", e.name, v.name, fields.len(), args.len()),
+                                                format!("Enum variant '{}::{}' expects {} arguments, but {} were provided", e.name, v.name, fields.len(), positional_args.len()),
                                             ));
                                         } else {
-                                            for (i, (arg, field)) in args.iter().zip(fields.iter()).enumerate() {
+                                            for (i, (arg, field)) in positional_args.iter().zip(fields.iter()).enumerate() {
                                                 if !self.can_assign(&field.ty, &arg.ty) {
                                                     self.errors.push(KqlError::semantic(
                                                         arg.span,
@@ -942,10 +983,10 @@ impl Lowerer {
                                                 }
                                             }
                                         }
-                                    } else if !args.is_empty() {
+                                    } else if !positional_args.is_empty() {
                                         self.errors.push(KqlError::semantic(
                                             c.span,
-                                            format!("Enum variant '{}::{}' expects 0 arguments, but {} were provided", e.name, v.name, args.len()),
+                                            format!("Enum variant '{}::{}' expects 0 arguments, but {} were provided", e.name, v.name, positional_args.len()),
                                         ));
                                     }
                                 }
@@ -956,8 +997,19 @@ impl Lowerer {
                     _ => {
                         // Check for built-in functions
                         if let HirExprKind::Symbol(name) = &func.kind {
-                            if let Some(ret_ty) = self.check_builtin_function(name, &args) {
+                            if let Some(ret_ty) = self.check_builtin_function(name, &positional_args) {
                                 ret_ty
+                            } else {
+                                HirType::Unknown
+                            }
+                        } else if let HirExprKind::Member { member, .. } = &func.kind {
+                            // Also allow member access to built-in functions (e.g., Product.count(*))
+                            if let Some(ret_ty) = self.check_builtin_function(member, &positional_args) {
+                                ret_ty
+                            } else if member == "over" {
+                                // Special case for window functions
+                                // Return the same type as the expression it's called on
+                                func.ty.clone()
                             } else {
                                 HirType::Unknown
                             }
@@ -969,6 +1021,46 @@ impl Lowerer {
                 
                 Ok(HirExpr { kind: HirExprKind::Call { func: Box::new(func), args }, ty, span: c.span })
             }
+            ast::Expr::List(l) => {
+                let mut elements = Vec::new();
+                let mut elem_ty = HirType::Unknown;
+                for e in l.elements {
+                    let lowered = self.lower_expr(e)?;
+                    if elem_ty == HirType::Unknown {
+                        elem_ty = lowered.ty.clone();
+                    }
+                    elements.push(lowered);
+                }
+                Ok(HirExpr {
+                    kind: HirExprKind::List(elements),
+                    ty: HirType::List(Box::new(elem_ty)),
+                    span: l.span,
+                })
+            }
+            ast::Expr::Window(w) => {
+                let expr = self.lower_expr(*w.expr)?;
+                let mut partition_by = Vec::new();
+                for e in w.partition_by {
+                    partition_by.push(self.lower_expr(e)?);
+                }
+                let mut order_by = Vec::new();
+                for o in w.order_by {
+                    order_by.push(HirOrderByExpr {
+                        expr: Box::new(self.lower_expr(*o.expr)?),
+                        desc: o.desc,
+                    });
+                }
+                let ty = expr.ty.clone();
+                Ok(HirExpr {
+                    kind: HirExprKind::Window(HirWindowExpr {
+                        expr: Box::new(expr),
+                        partition_by,
+                        order_by,
+                    }),
+                    ty,
+                    span: w.span,
+                })
+            }
             ast::Expr::Member(m) => {
                 let object = self.lower_expr(*m.object)?;
                 let member_name = m.member.name.clone();
@@ -979,6 +1071,9 @@ impl Lowerer {
                         if let Some(s) = self.db.structs.get(id) {
                             if let Some(f) = s.fields.iter().find(|f| f.name == member_name) {
                                 ty = f.ty.clone();
+                            } else if ["filter", "where", "select", "limit", "offset", "order_by", "count", "sum", "avg", "max", "min"].contains(&member_name.as_str()) {
+                                // Query methods or aggregation methods
+                                ty = HirType::List(Box::new(HirType::Struct(*id)));
                             } else {
                                 self.errors.push(KqlError::semantic(
                                     m.member.span,

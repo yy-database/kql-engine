@@ -1,5 +1,5 @@
 use crate::hir::{
-    HirExpr, HirExprKind, HirId, HirLiteral, HirProgram, HirType, PrimitiveType,
+    HirArgument, HirExpr, HirExprKind, HirId, HirLiteral, HirProgram, HirType, PrimitiveType,
 };
 use crate::mir::*;
 use kql_types::Result;
@@ -250,6 +250,7 @@ impl MirLowerer {
                                         HirLiteral::String(s) => format!("'{}'", s),
                                         HirLiteral::Bool(b) => b.to_string(),
                                         HirLiteral::Null => "NULL".to_string(),
+                                        HirLiteral::Star => "*".to_string(),
                                     });
                                 }
                             }
@@ -604,7 +605,11 @@ impl MirLowerer {
                     match member.as_str() {
                         "filter" | "where" => {
                             if let Some(arg) = args.get(0) {
-                                let cond = self.lower_expr_with_alias(arg, current_alias.as_deref());
+                                let expr = match arg {
+                                    HirArgument::Positional(e) => e,
+                                    HirArgument::Named { value, .. } => value,
+                                };
+                                let cond = self.lower_expr_with_alias(expr, current_alias.as_deref());
                                 *selection = match selection.take() {
                                     Some(existing) => Some(MirExpr::Binary {
                                         left: Box::new(existing),
@@ -618,12 +623,18 @@ impl MirLowerer {
                         "select" => {
                             projection.clear();
                             for arg in args {
-                                projection.push(self.lower_projection_with_alias(arg, current_alias.as_deref()));
+                                let expr = match arg {
+                                    HirArgument::Positional(e) => e,
+                                    HirArgument::Named { value, .. } => value,
+                                };
+                                projection.push(self.lower_projection_with_alias(expr, current_alias.as_deref()));
                             }
                         }
-                        _ => {
-                            // Might be an aggregation or other method
+                        "count" | "sum" | "avg" | "max" | "min" => {
+                            projection.clear();
+                            projection.push(self.lower_projection_with_alias(expr, current_alias.as_deref()));
                         }
+                        _ => {}
                     }
                 }
             }
@@ -639,6 +650,7 @@ impl MirLowerer {
                 HirLiteral::String(s) => MirLiteral::String(s.clone()),
                 HirLiteral::Bool(b) => MirLiteral::Bool(*b),
                 HirLiteral::Null => MirLiteral::Null,
+                HirLiteral::Star => MirLiteral::Star,
             }),
             HirExprKind::Binary { left, op, right } => MirExpr::Binary {
                 left: Box::new(self.lower_expr_with_alias(left, alias)),
@@ -658,14 +670,36 @@ impl MirLowerer {
                 column: member.clone(),
             },
             HirExprKind::Call { func, args } => {
-                if let HirExprKind::Symbol(name) = &func.kind {
+                let func_name = if let HirExprKind::Symbol(name) = &func.kind {
+                    Some(name.clone())
+                } else if let HirExprKind::Member { member, .. } = &func.kind {
+                    Some(member.clone())
+                } else {
+                    None
+                };
+
+                if let Some(name) = func_name {
                     MirExpr::Call {
-                        func: name.clone(),
-                        args: args.iter().map(|a| self.lower_expr_with_alias(a, alias)).collect(),
+                        func: name,
+                        args: args.iter().map(|a| match a {
+                            HirArgument::Positional(e) => self.lower_expr_with_alias(e, alias),
+                            HirArgument::Named { value, .. } => self.lower_expr_with_alias(value, alias),
+                        }).collect(),
                     }
                 } else {
                     MirExpr::Literal(MirLiteral::Null)
                 }
+            }
+            HirExprKind::Window(w) => {
+                MirExpr::Window(MirWindow {
+                    expr: Box::new(self.lower_expr_with_alias(&w.expr, alias)),
+                    partition_by: w.partition_by.iter().map(|e| self.lower_expr_with_alias(e, alias)).collect(),
+                    order_by: w.order_by.iter().map(|o| MirOrderBy {
+                        expr: Box::new(self.lower_expr_with_alias(&o.expr, alias)),
+                        desc: o.desc,
+                    }).collect(),
+                    alias: None,
+                })
             }
             _ => MirExpr::Literal(MirLiteral::Null),
         }
@@ -676,11 +710,22 @@ impl MirLowerer {
             HirExprKind::Symbol(name) => MirProjection::Field(name.clone()),
             HirExprKind::Member { member, .. } => MirProjection::Field(member.clone()),
             HirExprKind::Call { func, args } => {
-                if let HirExprKind::Symbol(name) = &func.kind {
+                let func_name = if let HirExprKind::Symbol(name) = &func.kind {
+                    Some(name.clone())
+                } else if let HirExprKind::Member { member, .. } = &func.kind {
+                    Some(member.clone())
+                } else {
+                    None
+                };
+
+                if let Some(name) = func_name {
                     MirProjection::Aggregation(MirAggregation {
-                        func: name.clone(),
+                        func: name,
                         arg: Box::new(if let Some(arg) = args.get(0) {
-                            self.lower_expr_with_alias(arg, alias)
+                            match arg {
+                                HirArgument::Positional(e) => self.lower_expr_with_alias(e, alias),
+                                HirArgument::Named { value, .. } => self.lower_expr_with_alias(value, alias),
+                            }
                         } else {
                             MirExpr::Literal(MirLiteral::Null)
                         }),
@@ -689,6 +734,17 @@ impl MirLowerer {
                 } else {
                     MirProjection::Field("unknown".to_string())
                 }
+            }
+            HirExprKind::Window(w) => {
+                MirProjection::Window(MirWindow {
+                    expr: Box::new(self.lower_expr_with_alias(&w.expr, alias)),
+                    partition_by: w.partition_by.iter().map(|e| self.lower_expr_with_alias(e, alias)).collect(),
+                    order_by: w.order_by.iter().map(|o| MirOrderBy {
+                        expr: Box::new(self.lower_expr_with_alias(&o.expr, alias)),
+                        desc: o.desc,
+                    }).collect(),
+                    alias: None,
+                })
             }
             _ => MirProjection::Field("unknown".to_string()),
         }

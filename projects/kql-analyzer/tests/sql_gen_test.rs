@@ -79,7 +79,7 @@ fn test_aggregation_sql_generation() {
     let sql_gen = SqlGenerator::new(mir.clone(), SqlDialect::Postgres);
     
     // Manual construction of an aggregation expression for testing LIR
-    use kql_analyzer::hir::{HirExpr, HirExprKind, HirBinaryOp, HirLiteral};
+    use kql_analyzer::hir::{HirExpr, HirExprKind, HirBinaryOp, HirLiteral, HirArgument};
     use kql_types::Span;
     
     let product_table = mir.tables.get("Product").unwrap();
@@ -98,7 +98,7 @@ fn test_aggregation_sql_generation() {
     let avg_call = HirExpr {
         kind: HirExprKind::Call {
             func: Box::new(avg_func),
-            args: vec![price_field],
+            args: vec![HirArgument::Positional(price_field)],
         },
         ty: kql_analyzer::hir::HirType::Primitive(kql_analyzer::hir::PrimitiveType::F64),
         span: Span::default(),
