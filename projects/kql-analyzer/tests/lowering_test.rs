@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_has;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::mir::mir_gen::MirLowerer;
 use kql_analyzer::lir::sql_gen::SqlGenerator;
@@ -43,7 +45,9 @@ fn test_full_lowering_pipeline() {
     
     assert_eq!(statements.len(), 1);
     let sql = statements[0].to_string();
-    assert!(sql.contains("CREATE TABLE IF NOT EXISTS user"));
-    assert!(sql.contains("id INT"));
-    assert!(sql.contains("name VARCHAR"));
+    assert_sql_has(&sql, &[
+        "CREATE TABLE IF NOT EXISTS user",
+        "id INT",
+        "name VARCHAR"
+    ]);
 }

@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_has;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::mir::mir_gen::MirLowerer;
 use kql_analyzer::lir::sql_gen::SqlGenerator;
@@ -45,7 +47,7 @@ fn test_composite_pk_and_index() {
     let sql = statements[0].to_string();
     
     // sqlparser-rs output for CREATE TABLE with composite PK
-    assert!(sql.contains("PRIMARY KEY (tenant_id, user_id)"));
+    assert_sql_has(&sql, &["PRIMARY KEY (tenant_id, user_id)"]);
 }
 
 #[test]

@@ -641,10 +641,14 @@ impl Lowerer {
                     "f64" => Ok(HirType::Primitive(PrimitiveType::F64)),
                     "String" | "string" => Ok(HirType::Primitive(PrimitiveType::String)),
                     "Bool" | "bool" | "boolean" => Ok(HirType::Primitive(PrimitiveType::Bool)),
-                    "DateTime" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
-                    "Uuid" | "UUID" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
-                    "d64" | "D64" => Ok(HirType::Primitive(PrimitiveType::D64)),
-                    "d128" | "D128" => Ok(HirType::Primitive(PrimitiveType::D128)),
+                    "DateTime" | "datetime" => Ok(HirType::Primitive(PrimitiveType::DateTime)),
+                    "Date" | "date" => Ok(HirType::Primitive(PrimitiveType::Date)),
+                    "Time" | "time" => Ok(HirType::Primitive(PrimitiveType::Time)),
+                    "Uuid" | "UUID" | "uuid" => Ok(HirType::Primitive(PrimitiveType::Uuid)),
+                    "d64" | "D64" | "decimal64" => Ok(HirType::Primitive(PrimitiveType::D64)),
+                    "d128" | "D128" | "decimal128" | "decimal" => Ok(HirType::Primitive(PrimitiveType::D128)),
+                    "Bytes" | "bytes" | "blob" | "binary" => Ok(HirType::Primitive(PrimitiveType::Bytes)),
+                    "Json" | "json" | "JSON" => Ok(HirType::Primitive(PrimitiveType::Json)),
                     _ => Err(KqlError::semantic(n.span, format!("Unknown type: {}", n.name))),
                 }
             }

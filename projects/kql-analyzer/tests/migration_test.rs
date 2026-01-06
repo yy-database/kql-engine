@@ -29,6 +29,9 @@ fn test_migration_diff() {
         indexes: vec![],
         foreign_keys: vec![],
         relations: vec![],
+        lifecycle_hooks: vec![],
+        audit: false,
+        soft_delete: false,
     };
     old_mir.tables.insert("public::users".to_string(), old_table);
 
@@ -63,6 +66,9 @@ fn test_migration_diff() {
         indexes: vec![],
         foreign_keys: vec![],
         relations: vec![],
+        lifecycle_hooks: vec![],
+        audit: false,
+        soft_delete: false,
     };
     new_mir.tables.insert("public::users".to_string(), new_table);
 
@@ -96,6 +102,9 @@ fn test_migration_rename() {
         indexes: vec![],
         foreign_keys: vec![],
         relations: vec![],
+        lifecycle_hooks: vec![],
+        audit: false,
+        soft_delete: false,
     });
 
     let mut new_mir = MirProgram::default();
@@ -110,6 +119,9 @@ fn test_migration_rename() {
         indexes: vec![],
         foreign_keys: vec![],
         relations: vec![],
+        lifecycle_hooks: vec![],
+        audit: false,
+        soft_delete: false,
     });
 
     let engine = MigrationEngine::new(old_mir, new_mir);

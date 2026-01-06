@@ -50,9 +50,13 @@ pub enum PrimitiveType {
     String,
     Bool,
     DateTime,
+    Date,
+    Time,
     Uuid,
     D64,
     D128,
+    Bytes,
+    Json,
 }
 
 #[derive(Debug, Clone, PartialEq)]

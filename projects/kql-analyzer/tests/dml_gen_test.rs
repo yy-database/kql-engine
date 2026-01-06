@@ -29,6 +29,9 @@ fn test_insert_generation() {
         indexes: vec![],
         foreign_keys: vec![],
         relations: vec![],
+        lifecycle_hooks: vec![],
+        audit: false,
+        soft_delete: false,
     };
     mir.tables.insert("auth::users".to_string(), table.clone());
 
@@ -66,6 +69,9 @@ fn test_update_by_pk_generation() {
         indexes: vec![],
         foreign_keys: vec![],
         relations: vec![],
+        lifecycle_hooks: vec![],
+        audit: false,
+        soft_delete: false,
     };
     mir.tables.insert("auth::users".to_string(), table.clone());
 
@@ -95,6 +101,9 @@ fn test_delete_by_pk_generation() {
         indexes: vec![],
         foreign_keys: vec![],
         relations: vec![],
+        lifecycle_hooks: vec![],
+        audit: false,
+        soft_delete: false,
     };
     mir.tables.insert("auth::users".to_string(), table.clone());
 

@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_has;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::mir::mir_gen::MirLowerer;
 use kql_analyzer::lir::sql_gen::SqlGenerator;
@@ -34,7 +36,7 @@ fn test_table_annotation() {
     let sql_gen = SqlGenerator::new(mir_db, SqlDialect::Postgres);
     let statements = sql_gen.generate_ddl();
     let sql = statements[0].to_string();
-    assert!(sql.contains("CREATE TABLE IF NOT EXISTS users"));
+    assert_sql_has(&sql, &["CREATE TABLE IF NOT EXISTS users"]);
 }
 
 #[test]
@@ -93,7 +95,7 @@ fn test_table_schema_named_arg() {
     let sql_gen = SqlGenerator::new(mir_db, SqlDialect::Postgres);
     let statements = sql_gen.generate_ddl();
     let sql = statements[0].to_string();
-    assert!(sql.contains("CREATE TABLE IF NOT EXISTS auth.users"));
+    assert_sql_has(&sql, &["CREATE TABLE IF NOT EXISTS auth.users"]);
 }
 
 #[test]
@@ -157,7 +159,7 @@ fn test_toplevel_namespace() {
     let sql_gen = SqlGenerator::new(mir_db, SqlDialect::Postgres);
     let statements = sql_gen.generate_ddl();
     let sql = statements[0].to_string();
-    assert!(sql.contains("CREATE TABLE IF NOT EXISTS auth.users"));
+    assert_sql_has(&sql, &["CREATE TABLE IF NOT EXISTS auth.users"]);
 }
 
 #[test]
@@ -211,5 +213,5 @@ fn test_database_block_schema() {
     let sql_gen = SqlGenerator::new(mir_db, SqlDialect::Postgres);
     let statements = sql_gen.generate_ddl();
     let sql = statements[0].to_string();
-    assert!(sql.contains("CREATE TABLE IF NOT EXISTS auth.users"));
+    assert_sql_has(&sql, &["CREATE TABLE IF NOT EXISTS auth.users"]);
 }

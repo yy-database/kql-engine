@@ -62,9 +62,13 @@ impl MirLowerer {
 
             let mut table_name = to_snake_case(&s.name);
             let mut schema = s.schema.clone(); // Use schema from HIR (propagated from namespace)
-            let mut primary_key = None;
+            let mut struct_primary_key = None;
+            let mut field_primary_keys = Vec::new();
             let mut indexes = Vec::new();
             let mut foreign_keys = Vec::new();
+            let mut lifecycle_hooks = Vec::new();
+            let mut audit = false;
+            let mut soft_delete = false;
 
             for attr in &s.attrs {
                 match attr.name.as_str() {
@@ -95,7 +99,7 @@ impl MirLowerer {
                             }
                         }
                         if !pk_cols.is_empty() {
-                            primary_key = Some(pk_cols);
+                            struct_primary_key = Some(pk_cols);
                         }
                     }
                     "index" => {
@@ -147,6 +151,52 @@ impl MirLowerer {
                                 unique: true,
                             });
                         }
+                    }
+                    "before_save" => {
+                        if let Some(arg) = attr.args.get(0) {
+                            if let HirExprKind::Symbol(func) = &arg.value.kind {
+                                lifecycle_hooks.push(LifecycleHook {
+                                    event: LifecycleEvent::BeforeSave,
+                                    function: func.clone(),
+                                });
+                            }
+                        }
+                    }
+                    "after_save" => {
+                        if let Some(arg) = attr.args.get(0) {
+                            if let HirExprKind::Symbol(func) = &arg.value.kind {
+                                lifecycle_hooks.push(LifecycleHook {
+                                    event: LifecycleEvent::AfterSave,
+                                    function: func.clone(),
+                                });
+                            }
+                        }
+                    }
+                    "before_delete" => {
+                        if let Some(arg) = attr.args.get(0) {
+                            if let HirExprKind::Symbol(func) = &arg.value.kind {
+                                lifecycle_hooks.push(LifecycleHook {
+                                    event: LifecycleEvent::BeforeDelete,
+                                    function: func.clone(),
+                                });
+                            }
+                        }
+                    }
+                    "after_delete" => {
+                        if let Some(arg) = attr.args.get(0) {
+                            if let HirExprKind::Symbol(func) = &arg.value.kind {
+                                lifecycle_hooks.push(LifecycleHook {
+                                    event: LifecycleEvent::AfterDelete,
+                                    function: func.clone(),
+                                });
+                            }
+                        }
+                    }
+                    "audit" => {
+                        audit = true;
+                    }
+                    "soft_delete" => {
+                        soft_delete = true;
                     }
                     _ => {}
                 }
@@ -215,7 +265,7 @@ impl MirLowerer {
                 for attr in &f.attrs {
                     match attr.name.as_str() {
                         "primary_key" => {
-                            primary_key = Some(vec![f.name.clone()]);
+                            field_primary_keys.push(f.name.clone());
                             nullable = false;
                         }
                         "unique" => {
@@ -377,6 +427,72 @@ impl MirLowerer {
                 }
             }
 
+            // Add audit columns
+            if audit {
+                if !columns.iter().any(|c| c.name == "created_at") {
+                    columns.push(Column {
+                        name: "created_at".to_string(),
+                        ty: ColumnType::DateTime,
+                        nullable: false,
+                        auto_increment: false,
+                        default: Some("CURRENT_TIMESTAMP".to_string()),
+                    });
+                }
+                if !columns.iter().any(|c| c.name == "updated_at") {
+                    columns.push(Column {
+                        name: "updated_at".to_string(),
+                        ty: ColumnType::DateTime,
+                        nullable: false,
+                        auto_increment: false,
+                        default: Some("CURRENT_TIMESTAMP".to_string()),
+                    });
+                }
+            }
+
+            // Add soft delete column
+            if soft_delete {
+                if !columns.iter().any(|c| c.name == "deleted_at") {
+                    columns.push(Column {
+                        name: "deleted_at".to_string(),
+                        ty: ColumnType::DateTime,
+                        nullable: true,
+                        auto_increment: false,
+                        default: None,
+                    });
+                }
+            }
+
+            // Add audit columns
+            if audit {
+                let audit_cols = [
+                    ("created_at", ColumnType::DateTime, false, Some("CURRENT_TIMESTAMP".to_string())),
+                    ("updated_at", ColumnType::DateTime, false, Some("CURRENT_TIMESTAMP".to_string())),
+                    ("created_by", ColumnType::String(None), true, None),
+                    ("updated_by", ColumnType::String(None), true, None),
+                ];
+
+                for (name, ty, nullable, default) in audit_cols {
+                    if !columns.iter().any(|c| c.name == name) {
+                        columns.push(Column {
+                            name: name.to_string(),
+                            ty,
+                            nullable,
+                            auto_increment: false,
+                            default,
+                        });
+                    }
+                }
+            }
+
+            // Determine primary key: struct-level takes precedence, then field-level
+            let primary_key = if let Some(pk) = struct_primary_key {
+                Some(pk)
+            } else if !field_primary_keys.is_empty() {
+                Some(field_primary_keys)
+            } else {
+                None
+            };
+
             let full_name = if let Some(ns) = &s.namespace {
                 format!("{}::{}", ns, s.name)
             } else {
@@ -393,6 +509,9 @@ impl MirLowerer {
                     indexes,
                     foreign_keys,
                     relations: relations_list,
+                    lifecycle_hooks,
+                    audit,
+                    soft_delete,
                 },
             );
         }
@@ -468,6 +587,9 @@ impl MirLowerer {
                             indexes: Vec::new(),
                             foreign_keys,
                             relations: Vec::new(),
+                            lifecycle_hooks: Vec::new(),
+                            audit: false,
+                            soft_delete: false,
                         },
                     );
                 }
@@ -826,9 +948,13 @@ impl MirLowerer {
                 PrimitiveType::String => Ok(ColumnType::String(None)),
                 PrimitiveType::Bool => Ok(ColumnType::Bool),
                 PrimitiveType::DateTime => Ok(ColumnType::DateTime),
+                PrimitiveType::Date => Ok(ColumnType::Date),
+                PrimitiveType::Time => Ok(ColumnType::Time),
                 PrimitiveType::Uuid => Ok(ColumnType::Uuid),
                 PrimitiveType::D64 => Ok(ColumnType::Decimal64),
                 PrimitiveType::D128 => Ok(ColumnType::Decimal128),
+                PrimitiveType::Bytes => Ok(ColumnType::Bytes),
+                PrimitiveType::Json => Ok(ColumnType::Json),
             },
             HirType::Struct(_) => Ok(ColumnType::Json),
             HirType::Enum(id) => {

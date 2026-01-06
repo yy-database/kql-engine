@@ -116,6 +116,23 @@ pub struct Table {
     pub indexes: Vec<Index>,
     pub foreign_keys: Vec<ForeignKey>,
     pub relations: Vec<Relation>,
+    pub lifecycle_hooks: Vec<LifecycleHook>,
+    pub audit: bool,
+    pub soft_delete: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LifecycleHook {
+    pub event: LifecycleEvent,
+    pub function: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LifecycleEvent {
+    BeforeSave,
+    AfterSave,
+    BeforeDelete,
+    AfterDelete,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -173,10 +190,13 @@ pub enum ColumnType {
     String(Option<usize>), // Optional length
     Bool,
     DateTime,
+    Date,
+    Time,
     Uuid,
     Json,
     Decimal64,
     Decimal128,
+    Bytes,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

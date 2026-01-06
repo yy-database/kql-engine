@@ -411,9 +411,13 @@ impl SqlGenerator {
                         crate::hir::PrimitiveType::String => DataType::Varchar(None),
                         crate::hir::PrimitiveType::Bool => DataType::Boolean,
                         crate::hir::PrimitiveType::DateTime => DataType::Timestamp(None, sqlparser::ast::TimezoneInfo::None),
+                        crate::hir::PrimitiveType::Date => DataType::Date,
+                        crate::hir::PrimitiveType::Time => DataType::Time(None, sqlparser::ast::TimezoneInfo::None),
                         crate::hir::PrimitiveType::Uuid => DataType::Uuid,
                         crate::hir::PrimitiveType::D64 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
                         crate::hir::PrimitiveType::D128 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
+                        crate::hir::PrimitiveType::Bytes => DataType::Blob(None),
+                        crate::hir::PrimitiveType::Json => DataType::JSON,
                     },
                     _ => DataType::Varchar(None), // Fallback
                 };
@@ -1033,33 +1037,69 @@ impl SqlGenerator {
     }
 
     fn generate_column_def(&self, col: &Column) -> ColumnDef {
-        let data_type = match &col.ty {
-            ColumnType::I8 => DataType::Custom(ObjectName(vec![Ident::new("TINYINT")]), vec![]),
-            ColumnType::I16 => DataType::SmallInt(None),
-            ColumnType::I32 => DataType::Int(None),
-            ColumnType::I64 => DataType::BigInt(None),
-            ColumnType::U8 => DataType::Custom(ObjectName(vec![Ident::new("TINYINT UNSIGNED")]), vec![]),
-            ColumnType::U16 => DataType::Custom(ObjectName(vec![Ident::new("SMALLINT UNSIGNED")]), vec![]),
-            ColumnType::U32 => DataType::Custom(ObjectName(vec![Ident::new("INT UNSIGNED")]), vec![]),
-            ColumnType::U64 => DataType::Custom(ObjectName(vec![Ident::new("BIGINT UNSIGNED")]), vec![]),
-            ColumnType::F32 => DataType::Float(None),
-            ColumnType::F64 => DataType::Double,
-            ColumnType::String(len) => DataType::Varchar(len.map(|l| CharacterLength::IntegerLength {
-                length: l as u64,
-                unit: None,
-            })),
-            ColumnType::Bool => DataType::Boolean,
-            ColumnType::DateTime => DataType::Timestamp(None, sqlparser::ast::TimezoneInfo::None),
-            ColumnType::Uuid => DataType::Uuid,
-            ColumnType::Json => {
-                if self.dialect == SqlDialect::Postgres {
-                    DataType::Custom(ObjectName(vec![Ident::new("JSONB")]), vec![])
-                } else {
-                    DataType::JSON
-                }
+        let data_type = match self.dialect {
+            SqlDialect::Postgres => match &col.ty {
+                ColumnType::I8 => DataType::SmallInt(None),
+                ColumnType::I16 => DataType::SmallInt(None),
+                ColumnType::I32 => DataType::Int(None),
+                ColumnType::I64 => DataType::BigInt(None),
+                ColumnType::U8 => DataType::SmallInt(None),
+                ColumnType::U16 => DataType::Int(None),
+                ColumnType::U32 => DataType::BigInt(None),
+                ColumnType::U64 => DataType::Numeric(sqlparser::ast::ExactNumberInfo::Precision(20)),
+                ColumnType::F32 => DataType::Real,
+                ColumnType::F64 => DataType::DoublePrecision,
+                ColumnType::String(len) => DataType::Varchar(len.map(|l| CharacterLength::IntegerLength {
+                    length: l as u64,
+                    unit: None,
+                })),
+                ColumnType::Bool => DataType::Boolean,
+                ColumnType::DateTime => DataType::Timestamp(None, sqlparser::ast::TimezoneInfo::None),
+                ColumnType::Date => DataType::Date,
+                ColumnType::Time => DataType::Time(None, sqlparser::ast::TimezoneInfo::None),
+                ColumnType::Uuid => DataType::Uuid,
+                ColumnType::Json => DataType::Custom(ObjectName(vec![Ident::new("JSONB")]), vec![]),
+                ColumnType::Decimal64 => DataType::Numeric(sqlparser::ast::ExactNumberInfo::PrecisionAndScale(18, 6)),
+                ColumnType::Decimal128 => DataType::Numeric(sqlparser::ast::ExactNumberInfo::PrecisionAndScale(38, 10)),
+                ColumnType::Bytes => DataType::Bytea,
             },
-            ColumnType::Decimal64 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
-            ColumnType::Decimal128 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::None),
+            SqlDialect::MySql => match &col.ty {
+                ColumnType::I8 => DataType::Custom(ObjectName(vec![Ident::new("TINYINT")]), vec![]),
+                ColumnType::I16 => DataType::SmallInt(None),
+                ColumnType::I32 => DataType::Int(None),
+                ColumnType::I64 => DataType::BigInt(None),
+                ColumnType::U8 => DataType::Custom(ObjectName(vec![Ident::new("TINYINT UNSIGNED")]), vec![]),
+                ColumnType::U16 => DataType::Custom(ObjectName(vec![Ident::new("SMALLINT UNSIGNED")]), vec![]),
+                ColumnType::U32 => DataType::Custom(ObjectName(vec![Ident::new("INT UNSIGNED")]), vec![]),
+                ColumnType::U64 => DataType::Custom(ObjectName(vec![Ident::new("BIGINT UNSIGNED")]), vec![]),
+                ColumnType::F32 => DataType::Float(None),
+                ColumnType::F64 => DataType::Double,
+                ColumnType::String(len) => DataType::Varchar(len.map(|l| CharacterLength::IntegerLength {
+                    length: l as u64,
+                    unit: None,
+                })),
+                ColumnType::Bool => DataType::Boolean,
+                ColumnType::DateTime => DataType::Datetime(None),
+                ColumnType::Date => DataType::Date,
+                ColumnType::Time => DataType::Time(None, sqlparser::ast::TimezoneInfo::None),
+                ColumnType::Uuid => DataType::Char(Some(sqlparser::ast::CharacterLength::IntegerLength { length: 36, unit: None })),
+                ColumnType::Json => DataType::JSON,
+                ColumnType::Decimal64 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::PrecisionAndScale(18, 6)),
+                ColumnType::Decimal128 => DataType::Decimal(sqlparser::ast::ExactNumberInfo::PrecisionAndScale(38, 10)),
+                ColumnType::Bytes => DataType::Blob(None),
+            },
+            SqlDialect::Sqlite => match &col.ty {
+                ColumnType::I8 | ColumnType::I16 | ColumnType::I32 | ColumnType::I64 |
+                ColumnType::U8 | ColumnType::U16 | ColumnType::U32 | ColumnType::U64 => DataType::Integer(None),
+                ColumnType::F32 | ColumnType::F64 => DataType::Real,
+                ColumnType::String(_) => DataType::Text,
+                ColumnType::Bool => DataType::Integer(None),
+                ColumnType::DateTime | ColumnType::Date | ColumnType::Time => DataType::Text,
+                ColumnType::Uuid => DataType::Text,
+                ColumnType::Json => DataType::Text,
+                ColumnType::Decimal64 | ColumnType::Decimal128 => DataType::Text,
+                ColumnType::Bytes => DataType::Blob(None),
+            },
         };
 
         let mut options = Vec::new();
@@ -1072,21 +1112,51 @@ impl SqlGenerator {
         }
 
         if col.auto_increment {
-            // Note: Different dialects handle auto increment differently.
-            // For now we use a generic DialectPostgres/MySql might need specific handling.
-            options.push(ColumnOptionDef {
-                name: None,
-                option: ColumnOption::DialectSpecific(vec![Token::make_keyword("AUTO_INCREMENT")]),
-            });
+            match self.dialect {
+                SqlDialect::Postgres => {
+                    // For Postgres, we usually use SERIAL or IDENTITY.
+                    // If we use DataType::Int, we should add IDENTITY.
+                    options.push(ColumnOptionDef {
+                        name: None,
+                        option: ColumnOption::Generated {
+                            generated_as: sqlparser::ast::GeneratedAs::Always,
+                            sequence_options: None,
+                            generation_expr: None,
+                            generated_keyword: false,
+                            generation_expr_mode: None,
+                        },
+                    });
+                }
+                SqlDialect::MySql => {
+                    options.push(ColumnOptionDef {
+                        name: None,
+                        option: ColumnOption::DialectSpecific(vec![Token::make_keyword("AUTO_INCREMENT")]),
+                    });
+                }
+                SqlDialect::Sqlite => {
+                    // SQLite handles AUTOINCREMENT on primary key
+                    options.push(ColumnOptionDef {
+                        name: None,
+                        option: ColumnOption::DialectSpecific(vec![Token::make_keyword("AUTOINCREMENT")]),
+                    });
+                }
+            }
         }
 
         if let Some(default_val) = &col.default {
-            // Simple default value handling
+            // Try to parse the default value as an expression to avoid double quoting
+            // and support keywords like CURRENT_TIMESTAMP
+            let dialect = sqlparser::dialect::GenericDialect {};
+            let expr = sqlparser::parser::Parser::new(&dialect)
+                .try_with_sql(default_val)
+                .and_then(|mut p| p.parse_expr())
+                .unwrap_or_else(|_| {
+                    sqlparser::ast::Expr::Value(sqlparser::ast::Value::SingleQuotedString(default_val.clone()))
+                });
+
             options.push(ColumnOptionDef {
                 name: None,
-                option: ColumnOption::Default(sqlparser::ast::Expr::Value(
-                    sqlparser::ast::Value::SingleQuotedString(default_val.clone()),
-                )),
+                option: ColumnOption::Default(expr),
             });
         }
 
