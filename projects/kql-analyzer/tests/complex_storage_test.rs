@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_has;
 use kql_parser::Parser;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::codegen::RustGenerator;
@@ -63,9 +65,11 @@ fn test_complex_storage_codegen() {
     println!("--- SQL DDL ---\n{}", ddl_str);
 
     // Verify JSONB columns in Postgres
-    assert!(ddl_str.contains("meta JSONB NOT NULL"));
-    assert!(ddl_str.contains("history JSONB NOT NULL"));
-    assert!(ddl_str.contains("status JSONB NOT NULL"));
+    assert_sql_has(&ddl_str, &[
+        "meta JSONB NOT NULL",
+        "history JSONB NOT NULL",
+        "status JSONB NOT NULL"
+    ]);
 
     // Verify Metadata struct does NOT have its own table
     assert!(!ddl_str.contains("CREATE TABLE metadata"));

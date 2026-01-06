@@ -1,0 +1,20 @@
+[package]
+name = "kql-lsp"
+version = "0.0.0"
+edition = "2021"
+authors = ["Aster <192607617@qq.com>"]
+license = "MPL-2.0"
+description = "KQL Language Server Protocol implementation"
+
+[dependencies]
+kql-types = { path = "../kql-types" }
+kql-ast = { path = "../kql-ast" }
+kql-parser = { path = "../kql-parser" }
+kql-analyzer = { path = "../kql-analyzer" }
+
+tokio = { version = "1.35", features = ["full"] }
+tower = { version = "0.4", features = ["util"] }
+tower-lsp = "0.20"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"

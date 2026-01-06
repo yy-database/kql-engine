@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_has;
 use kql_analyzer::migration::manager::MigrationManager;
 use tempfile::tempdir;
 use std::fs;
@@ -20,8 +22,10 @@ fn test_migration_creation() {
     assert!(filename.ends_with(".sql"));
 
     let content = fs::read_to_string(file_path).unwrap();
-    assert!(content.contains("CREATE TABLE users"));
-    assert!(content.contains("ALTER TABLE users"));
+    assert_sql_has(&content, &[
+        "CREATE TABLE users",
+        "ALTER TABLE users"
+    ]);
 }
 
 #[test]

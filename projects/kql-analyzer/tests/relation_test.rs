@@ -1,3 +1,5 @@
+mod common;
+use common::assert_sql_has;
 use kql_parser::Parser;
 use kql_analyzer::hir::lower::Lowerer;
 use kql_analyzer::mir::mir_gen::MirLowerer;
@@ -100,7 +102,9 @@ fn test_many_to_many_relation() {
     
     assert_eq!(sqls.len(), 3);
     let junction_sql = sqls.iter().find(|s| s.contains("CREATE TABLE IF NOT EXISTS user_groups")).expect("Junction table SQL not found");
-    assert!(junction_sql.contains("user_id INT NOT NULL"));
-    assert!(junction_sql.contains("group_id INT NOT NULL"));
-    assert!(junction_sql.contains("PRIMARY KEY (user_id, group_id)"));
+    assert_sql_has(junction_sql, &[
+        "user_id INT NOT NULL",
+        "group_id INT NOT NULL",
+        "PRIMARY KEY (user_id, group_id)"
+    ]);
 }
