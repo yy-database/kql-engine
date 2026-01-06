@@ -511,13 +511,24 @@ impl Lowerer {
                     if let Some(args) = n.args {
                         if args.len() == 1 {
                             let inner = self.lower_type(args[0].ty.clone(), namespace)?;
-                            // Validate that inner is a primitive type or enum
+                            // Validate that inner is a primitive type, enum, or struct
                             match &inner {
-                                HirType::Primitive(_) | HirType::Enum(_) => {}
+                                HirType::Primitive(_) | HirType::Enum(_) => {
+                                    return Ok(HirType::Key {
+                                        entity: None,
+                                        inner: Box::new(inner),
+                                    });
+                                }
+                                HirType::Struct(id) => {
+                                    return Ok(HirType::Key {
+                                        entity: Some(*id),
+                                        inner: Box::new(inner),
+                                    });
+                                }
                                 _ => {
                                     self.errors.push(KqlError::semantic(
                                         n.span,
-                                        "Key type argument must be a primitive type or an enum".to_string(),
+                                        "Key type argument must be a primitive type, an enum, or a struct".to_string(),
                                     ));
                                 }
                             }

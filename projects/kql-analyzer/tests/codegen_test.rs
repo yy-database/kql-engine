@@ -37,11 +37,11 @@ fn test_rust_codegen_sqlx() {
     println!("{}", code);
 
     assert!(code.contains("#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]"));
-    assert!(code.contains("use sqlx::{FromRow, PgPool, MySqlPool, SqlitePool};"));
+    assert!(code.contains("use sqlx::{FromRow, Postgres, MySql, Sqlite};"));
     assert!(code.contains("pub struct UserRepository {"));
-    assert!(code.contains("pub async fn find(&self, id: i32) -> Result<Option<User>, sqlx::Error> {"));
-    assert!(code.contains("pub async fn insert(&self, model: &User) -> Result<(), sqlx::Error> {"));
-    assert!(code.contains("pub async fn update(&self, model: &User) -> Result<(), sqlx::Error> {"));
-    assert!(code.contains("pub async fn delete(&self, id: i32) -> Result<(), sqlx::Error> {"));
-    assert!(code.contains("pub async fn list(&self) -> Result<Vec<User>, sqlx::Error> {"));
+    assert!(code.contains("async fn find_by_id(&self, id: i32) -> Result<Option<User>, sqlx::Error> {"));
+    assert!(code.contains("async fn insert(&self, model: &User) -> Result<(), sqlx::Error> {"));
+    assert!(code.contains("async fn update(&self, model: &User) -> Result<(), sqlx::Error> {"));
+    assert!(code.contains("async fn delete(&self, id: i32) -> Result<(), sqlx::Error> {"));
+    assert!(code.contains("async fn list(&self) -> Result<Vec<User>, sqlx::Error> {"));
 }

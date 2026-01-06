@@ -16,6 +16,7 @@ fn test_auto_join_query_generation() {
         name: "User".to_string(),
         namespace: None,
         schema: None,
+        layout: None,
         fields: vec![
             HirField {
                 attrs: vec![],
@@ -41,6 +42,7 @@ fn test_auto_join_query_generation() {
         name: "Post".to_string(),
         namespace: None,
         schema: None,
+        layout: None,
         fields: vec![
             HirField {
                 attrs: vec![],

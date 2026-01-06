@@ -22,17 +22,25 @@ impl MigrationManager {
         Ok(())
     }
 
-    pub fn create_migration(&self, name: &str, sql_statements: &[String], mir_state: Option<&crate::mir::MirProgram>) -> Result<PathBuf> {
+    pub fn create_migration(&self, name: &str, up_sql: &[String], down_sql: &[String], mir_state: Option<&crate::mir::MirProgram>) -> Result<PathBuf> {
         self.setup()?;
 
         let timestamp = Local::now().format("%Y%m%d%H%M%S").to_string();
         let base_name = format!("{}_{}", timestamp, name.replace(" ", "_"));
-        let sql_filename = format!("{}.sql", base_name);
-        let sql_path = self.migration_dir.join(sql_filename);
+        
+        // Up migration
+        let up_filename = format!("{}.up.sql", base_name);
+        let up_path = self.migration_dir.join(up_filename);
+        let up_content = up_sql.join("\n");
+        fs::write(&up_path, up_content)
+            .with_context(|| format!("Failed to write UP migration file: {:?}", up_path))?;
 
-        let content = sql_statements.join("\n");
-        fs::write(&sql_path, content)
-            .with_context(|| format!("Failed to write migration file: {:?}", sql_path))?;
+        // Down migration
+        let down_filename = format!("{}.down.sql", base_name);
+        let down_path = self.migration_dir.join(down_filename);
+        let down_content = down_sql.join("\n");
+        fs::write(&down_path, down_content)
+            .with_context(|| format!("Failed to write DOWN migration file: {:?}", down_path))?;
 
         if let Some(mir) = mir_state {
             let mir_filename = format!("{}.mir.json", base_name);
@@ -42,7 +50,7 @@ impl MigrationManager {
                 .with_context(|| format!("Failed to write MIR state: {:?}", mir_path))?;
         }
 
-        Ok(sql_path)
+        Ok(up_path)
     }
 
     pub fn get_latest_mir(&self) -> Result<Option<crate::mir::MirProgram>> {
@@ -53,7 +61,11 @@ impl MigrationManager {
 
         // Search backwards for the latest .mir.json file
         for path in migrations.iter().rev() {
-            let mir_path = path.with_extension("mir.json");
+            let mir_path = path.to_str()
+                .and_then(|s| s.strip_suffix(".up.sql"))
+                .map(|s| PathBuf::from(format!("{}.mir.json", s)))
+                .unwrap_or_else(|| path.with_extension("mir.json"));
+
             if mir_path.exists() {
                 let content = fs::read_to_string(&mir_path)?;
                 let mir: crate::mir::MirProgram = serde_json::from_str(&content)?;
@@ -73,7 +85,7 @@ impl MigrationManager {
         for entry in fs::read_dir(&self.migration_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "sql") {
+            if path.is_file() && path.to_str().map_or(false, |s| s.ends_with(".up.sql")) {
                 migrations.push(path);
             }
         }

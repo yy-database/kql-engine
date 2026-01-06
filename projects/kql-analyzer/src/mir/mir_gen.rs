@@ -725,6 +725,10 @@ impl MirLowerer {
             HirType::Struct(_) => Ok(ColumnType::Json),
             HirType::Enum(id) => {
                 if let Some(e) = self.hir_db.enums.get(id) {
+                    // If any variant has fields, it must be JSON
+                    if e.variants.iter().any(|v| v.fields.is_some()) {
+                        return Ok(ColumnType::Json);
+                    }
                     if let Some(layout) = &e.layout {
                         return self.lower_type(layout);
                     }

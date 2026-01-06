@@ -16,6 +16,67 @@ pub enum MigrationStep {
     DropForeignKey { table_name: String, foreign_key: ForeignKey },
 }
 
+impl MigrationStep {
+    pub fn invert(&self) -> MigrationStep {
+        match self {
+            MigrationStep::CreateTable(table) => MigrationStep::DropTable(table.clone()),
+            MigrationStep::DropTable(table) => MigrationStep::CreateTable(table.clone()),
+            MigrationStep::RenameTable { old_name, new_name } => MigrationStep::RenameTable {
+                old_name: new_name.clone(),
+                new_name: old_name.clone(),
+            },
+            MigrationStep::AddColumn { table_name, column } => MigrationStep::DropColumn {
+                table_name: table_name.clone(),
+                column: column.clone(),
+            },
+            MigrationStep::DropColumn { table_name, column } => MigrationStep::AddColumn {
+                table_name: table_name.clone(),
+                column: column.clone(),
+            },
+            MigrationStep::RenameColumn {
+                table_name,
+                old_name,
+                new_name,
+            } => MigrationStep::RenameColumn {
+                table_name: table_name.clone(),
+                old_name: new_name.clone(),
+                new_name: old_name.clone(),
+            },
+            MigrationStep::AlterColumn {
+                table_name,
+                old_column,
+                new_column,
+            } => MigrationStep::AlterColumn {
+                table_name: table_name.clone(),
+                old_column: new_column.clone(),
+                new_column: old_column.clone(),
+            },
+            MigrationStep::AddIndex { table_name, index } => MigrationStep::DropIndex {
+                table_name: table_name.clone(),
+                index: index.clone(),
+            },
+            MigrationStep::DropIndex { table_name, index } => MigrationStep::AddIndex {
+                table_name: table_name.clone(),
+                index: index.clone(),
+            },
+            MigrationStep::AddForeignKey {
+                table_name,
+                foreign_key,
+            } => MigrationStep::DropForeignKey {
+                table_name: table_name.clone(),
+                foreign_key: foreign_key.clone(),
+            },
+            MigrationStep::DropForeignKey {
+                table_name,
+                foreign_key,
+            } => MigrationStep::AddForeignKey {
+                table_name: table_name.clone(),
+                foreign_key: foreign_key.clone(),
+            },
+        }
+    }
+}
+
 pub struct MigrationEngine {
     pub old_mir: MirProgram,
     pub new_mir: MirProgram,
