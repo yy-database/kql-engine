@@ -16,19 +16,15 @@ impl KqlLanguageServer {
 
     /// Convert KQL span to LSP position
     fn span_to_range(&self, text: &str, span: Span) -> Range {
-        let start_line = text[..span.start].lines().count() as u32;
-        let start_col = text[..span.start]
-            .lines()
-            .last()
-            .map(|l| l.len() as u32)
-            .unwrap_or(0);
+        let start_slice = &text[..span.start];
+        let start_lines: Vec<&str> = start_slice.lines().collect();
+        let start_line = start_lines.len().saturating_sub(1) as u32;
+        let start_col = start_lines.last().map(|l| l.len() as u32).unwrap_or(0);
 
-        let end_line = text[..span.end].lines().count() as u32;
-        let end_col = text[..span.end]
-            .lines()
-            .last()
-            .map(|l| l.len() as u32)
-            .unwrap_or(0);
+        let end_slice = &text[..span.end];
+        let end_lines: Vec<&str> = end_slice.lines().collect();
+        let end_line = end_lines.len().saturating_sub(1) as u32;
+        let end_col = end_lines.last().map(|l| l.len() as u32).unwrap_or(0);
 
         Range {
             start: Position { line: start_line, character: start_col },

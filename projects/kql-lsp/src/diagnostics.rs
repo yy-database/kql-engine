@@ -41,12 +41,9 @@ fn position_from_offset(text: &str, offset: usize) -> Position {
     }
     
     let slice = &text[..offset];
-    let line = slice.lines().count() as u32;
-    let character = slice
-        .lines()
-        .last()
-        .map(|l| l.len() as u32)
-        .unwrap_or(0);
+    let lines: Vec<&str> = slice.lines().collect();
+    let line = lines.len().saturating_sub(1) as u32;
+    let character = lines.last().map(|l| l.len() as u32).unwrap_or(0);
 
     Position { line, character }
 }
