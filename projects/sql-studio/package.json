@@ -1,7 +1,7 @@
 {
     "name": "@yydb/sql-studio",
     "version": "0.0.1",
-    "description": "SQL Studio — browser workbench + `sql` CLI — 0.0.1 Developer Preview",
+    "description": "SQL Studio — browser workbench + `sql` CLI",
     "type": "module",
     "license": "MPL-2.0",
     "sideEffects": false,

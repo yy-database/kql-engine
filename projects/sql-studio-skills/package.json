@@ -1,7 +1,7 @@
 {
     "name": "@yydb/sql-studio-skills",
     "version": "0.0.1",
-    "description": "Agent Skills for SQL Studio — teach AI agents the sql CLI, ORM, and safe query workflows — 0.0.1 Developer Preview",
+    "description": "Agent Skills for SQL Studio — teach AI agents the sql CLI, ORM, and safe query workflows",
     "type": "module",
     "license": "MPL-2.0",
     "sideEffects": false,

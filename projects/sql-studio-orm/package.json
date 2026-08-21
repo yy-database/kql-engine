@@ -1,7 +1,7 @@
 {
     "name": "@yydb/sql-studio-orm",
     "version": "0.0.1",
-    "description": "SQL Studio ORM — schema-first, type-first SQL toolkit — 0.0.1 Developer Preview",
+    "description": "SQL Studio ORM — schema-first, type-first SQL toolkit",
     "type": "module",
     "license": "MPL-2.0",
     "sideEffects": false,

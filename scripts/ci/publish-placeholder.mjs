@@ -108,7 +108,14 @@ function takeFlag(args, flag) {
 
 const dryRun = rest.includes("--dry-run");
 const refresh = rest.includes("--refresh");
-const token = takeFlag(rest, "--token") ?? process.env.NPM_TOKEN ?? localEnv.NPM_TOKEN ?? localEnv.TOKEN;
+// Trust/account APIs need an interactive / 2FA-capable session (e.g. ~/.npmrc).
+// A dead granular NPM_TOKEN in .env must NOT override that — only honor --token /
+process.env for trust; publish stubs may still use localEnv.NPM_TOKEN.
+const tokenExplicit = takeFlag(rest, "--token") ?? process.env.NPM_TOKEN;
+const token =
+    command === "trust"
+        ? tokenExplicit
+        : (tokenExplicit ?? localEnv.NPM_TOKEN ?? localEnv.TOKEN);
 
 const otpFlag = takeFlag(rest, "--otp") ?? process.env.NPM_OTP ?? localEnv.NPM_OTP ?? localEnv.OTP;
 const totpSecretRaw =
