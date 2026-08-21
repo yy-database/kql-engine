@@ -1,7 +1,7 @@
 {
     "name": "@yydb/mongodb",
     "version": "0.0.1",
-    "description": "MongoDB driver and document workbench surfaces for SQL Studio — 0.0.1 Developer Preview",
+    "description": "MongoDB driver and document workbench surfaces for SQL Studio",
     "type": "module",
     "license": "MPL-2.0",
     "sideEffects": false,

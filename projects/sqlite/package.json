@@ -1,7 +1,7 @@
 {
     "name": "@yydb/sqlite",
     "version": "0.0.1",
-    "description": "SQLite driver for SQL Studio / sql-studio-orm — 0.0.1 Developer Preview",
+    "description": "SQLite driver for SQL Studio / sql-studio-orm",
     "type": "module",
     "license": "MPL-2.0",
     "sideEffects": false,

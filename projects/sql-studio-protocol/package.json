@@ -1,7 +1,7 @@
 {
     "name": "@yydb/sql-studio-protocol",
     "version": "0.0.1",
-    "description": "Experimental SQL Studio Protocol DTOs for the 0.0.x developer preview",
+    "description": "Experimental SQL Studio Protocol DTOs",
     "type": "module",
     "license": "MPL-2.0",
     "sideEffects": false,
