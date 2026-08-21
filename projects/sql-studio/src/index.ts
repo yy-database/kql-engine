@@ -92,6 +92,9 @@ export function createSqlStudio(options: CreateSqlStudioOptions): SqlStudio {
                 datasourceId,
             });
             firstError(messages);
+            if (!messages.some((m) => m.type === "connectionOpened")) {
+                throw new Error("@yydb/sql-studio: missing connectionOpened");
+            }
         },
 
         async closeConnection(connectionId) {
@@ -101,6 +104,9 @@ export function createSqlStudio(options: CreateSqlStudioOptions): SqlStudio {
                 connectionId,
             });
             firstError(messages);
+            if (!messages.some((m) => m.type === "connectionClosed")) {
+                throw new Error("@yydb/sql-studio: missing connectionClosed");
+            }
         },
 
         async *runQuery(request: StudioQueryRequest): AsyncIterable<StudioQueryChunk> {
@@ -140,4 +146,4 @@ export function createSqlStudio(options: CreateSqlStudioOptions): SqlStudio {
 
 export { PROTOCOL_VERSION };
 export type { StudioQueryChunk, StudioQueryRequest, StudioDatasourceInfo };
-export { createSqlCli } from "./create-cli.ts";
+// Node CLI builder is exported only via package exports path "./cli".

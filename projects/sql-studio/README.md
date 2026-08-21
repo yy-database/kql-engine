@@ -25,7 +25,7 @@ const studio = createSqlStudio({
 });
 ```
 
-Connects only to `@yydb/sql-studio-server` via the Studio Protocol.
-Never opens PostgreSQL / MySQL / Redis / MongoDB TCP from the browser.
+Connects only to `@yydb/sql-studio-server` via the Studio Protocol. Never opens PostgreSQL / MySQL / Redis / MongoDB TCP
+from the browser.
 
 Agent workflows: see `@yydb/sql-studio-skills`.

@@ -1,7 +1,7 @@
 # `@yydb/sql-studio-server`
 
-Server host for **SQL Studio**: protocol dispatch, connection registry, query
-execution via `SqlDriver`, cancel, and (later) auth/audit.
+Server host for **SQL Studio**: protocol dispatch, connection registry, query execution via `SqlDriver`, cancel, and
+(later) auth/audit.
 
 ```ts
 import { createSqlStudioServer } from "@yydb/sql-studio-server";

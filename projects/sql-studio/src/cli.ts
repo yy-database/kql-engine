@@ -5,4 +5,6 @@
  */
 import { createSqlCli } from "./create-cli.ts";
 
-createSqlCli().parse();
+const cli = createSqlCli();
+cli.parse(process.argv, { run: false });
+await cli.runMatchedCommand();

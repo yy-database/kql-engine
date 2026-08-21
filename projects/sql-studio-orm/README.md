@@ -9,30 +9,30 @@ Schema-first, type-first SQL toolkit for **SQL Studio**.
 - `createMemoryDriver()` for tests and Studio fixtures
 
 ```ts
-import { createDatabase, type Generated } from "@yydb/sql-studio-orm";
-import { postgres } from "@yydb/postgres";
+import {createDatabase, type Generated} from "@yydb/sql-studio-orm";
+import {postgres} from "@yydb/postgres";
 
 interface Database {
-  users: {
-    id: Generated<number>;
-    email: string;
-  };
-  posts: {
-    id: Generated<number>;
-    authorId: number;
-    title: string;
-  };
+    users: {
+        id: Generated<number>;
+        email: string;
+    };
+    posts: {
+        id: Generated<number>;
+        authorId: number;
+        title: string;
+    };
 }
 
 const db = createDatabase<Database>({
-  driver: postgres({ url: process.env.DATABASE_URL! }),
+    driver: postgres({url: process.env.DATABASE_URL!}),
 });
 
 const users = await db
-  .selectFrom("users")
-  .leftJoin("posts", "posts.authorId", "users.id")
-  .select(["users.id", "users.email", "posts.title"])
-  .execute();
+    .selectFrom("users")
+    .leftJoin("posts", "posts.authorId", "users.id")
+    .select(["users.id", "users.email", "posts.title"])
+    .execute();
 // posts.title is string | null
 ```
 

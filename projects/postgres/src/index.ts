@@ -1,21 +1,14 @@
 /**
  * `@yydb/postgres` — PostgreSQL SqlDriver + Studio registration.
+ *
+ * Default entry is browser-safe stub. TCP wire lives on `@yydb/postgres/node`.
  */
 
-import type {
-    CompiledQuery,
-    ExecuteOptions,
-    QueryChunk,
-    QueryResult,
-    SqlConnection,
-    SqlDriver,
-    SqlTransaction,
-    StreamOptions,
-    TransactionOptions,
-} from "@yydb/sql-studio-orm";
+import type { SqlConnection, SqlDriver } from "@yydb/sql-studio-orm";
 import type { StudioDriverRegistration } from "@yydb/sql-studio-protocol";
 
 export const DRIVER_ID = "postgres" as const;
+export const DRIVER_STATUS = "experimental" as const;
 
 export type PostgresPoolOptions = {
     min?: number;
@@ -31,20 +24,6 @@ export type PostgresStudioOptions = PostgresDriverOptions & {
     id: string;
 };
 
-class NotImplementedConnection implements SqlConnection {
-    async execute<R>(_query: CompiledQuery, _options?: ExecuteOptions): Promise<QueryResult<R>> {
-        throw new Error("@yydb/postgres: wire execute not implemented yet");
-    }
-
-    stream<R>(_query: CompiledQuery, _options?: StreamOptions): AsyncIterable<QueryChunk<R>> {
-        throw new Error("@yydb/postgres: wire stream not implemented yet");
-    }
-
-    async begin(_options?: TransactionOptions): Promise<SqlTransaction> {
-        throw new Error("@yydb/postgres: transactions not implemented yet");
-    }
-}
-
 class PostgresDriver implements SqlDriver {
     readonly dialect = "postgres" as const;
     readonly url: string;
@@ -56,13 +35,13 @@ class PostgresDriver implements SqlDriver {
     }
 
     async acquire(): Promise<SqlConnection> {
-        return new NotImplementedConnection();
+        throw new Error("@yydb/postgres: TCP acquire is Node-only — import from @yydb/postgres/node (not implemented yet)");
     }
 
     async destroy(): Promise<void> {}
 }
 
-/** ORM / app entry — returns a real `SqlDriver` (TCP later). */
+/** ORM / app entry — returns a real `SqlDriver` shape (TCP later via `/node`). */
 export function postgres(options: PostgresDriverOptions): SqlDriver;
 /** Studio server registration when `id` is present. */
 export function postgres(options: PostgresStudioOptions): StudioDriverRegistration;

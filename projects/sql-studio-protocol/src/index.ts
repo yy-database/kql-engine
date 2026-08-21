@@ -1,17 +1,34 @@
 /**
  * SQL Studio Protocol — experimental public DTOs shared by workbench + server.
  *
- * 0.0.x developer-preview contract: breaking changes are allowed and the
- * protocol version/fingerprint must be checked by every caller.
+ * 0.0.x developer-preview contract: breaking changes are allowed.
+ * Callers must check PROTOCOL_VERSION / message `v`.
  */
 
 export const PROTOCOL_VERSION = 1 as const;
+
+/** Closed set of Studio Protocol error codes (server → client `error` / queryChunk.error). */
+export const STUDIO_ERROR_CODES = [
+    "bad_message",
+    "unknown_datasource",
+    "driver_unavailable",
+    "connection_exists",
+    "no_connection",
+    "query_failed",
+    "unsupported",
+] as const;
+
+export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number];
+
+export function isStudioErrorCode(value: unknown): value is StudioErrorCode {
+    return typeof value === "string" && (STUDIO_ERROR_CODES as readonly string[]).includes(value);
+}
 
 export type StudioDatasourceKind = "postgres" | "mysql" | "sqlite" | "redis" | "mongodb";
 
 export type StudioErrorBody = {
     message: string;
-    code?: string;
+    code?: StudioErrorCode;
 };
 
 /** Opaque driver registration consumed by `@yydb/sql-studio-server`. */
@@ -89,6 +106,8 @@ export type StudioDriverOpener = {
 
 // ── Wire messages (HTTPS JSON or WebSocket frames) ──────────────────────────
 
+const CLIENT_TYPES = new Set(["hello", "listDatasources", "openConnection", "closeConnection", "query", "cancel"]);
+
 export type StudioClientMessage =
     | { v: typeof PROTOCOL_VERSION; type: "hello" }
     | { v: typeof PROTOCOL_VERSION; type: "listDatasources" }
@@ -134,12 +153,29 @@ export type StudioServerMessage =
           v: typeof PROTOCOL_VERSION;
           type: "error";
           message: string;
-          code?: string;
+          code?: StudioErrorCode;
           requestId?: string;
       };
 
 export function isClientMessage(value: unknown): value is StudioClientMessage {
     if (!value || typeof value !== "object") return false;
-    const msg = value as { v?: unknown; type?: unknown };
-    return msg.v === PROTOCOL_VERSION && typeof msg.type === "string";
+    const msg = value as Record<string, unknown>;
+    if (msg.v !== PROTOCOL_VERSION || typeof msg.type !== "string" || !CLIENT_TYPES.has(msg.type)) {
+        return false;
+    }
+    switch (msg.type) {
+        case "hello":
+        case "listDatasources":
+            return true;
+        case "openConnection":
+            return typeof msg.connectionId === "string" && typeof msg.datasourceId === "string";
+        case "closeConnection":
+            return typeof msg.connectionId === "string";
+        case "query":
+            return typeof msg.connectionId === "string" && typeof msg.text === "string" && typeof msg.requestId === "string";
+        case "cancel":
+            return typeof msg.requestId === "string";
+        default:
+            return false;
+    }
 }

@@ -10,8 +10,15 @@ import {
     type StudioDatasourceInfo,
     type StudioDatasourceKind,
     type StudioDriverRegistration,
+    type StudioErrorCode,
     type StudioServerMessage,
 } from "@yydb/sql-studio-protocol";
+
+function errorMessage(code: StudioErrorCode, message: string, requestId?: string): StudioServerMessage {
+    return requestId === undefined
+        ? { v: PROTOCOL_VERSION, type: "error", code, message }
+        : { v: PROTOCOL_VERSION, type: "error", code, message, requestId };
+}
 
 export type CreateSqlStudioServerOptions = {
     databases: StudioDriverRegistration[];
@@ -64,14 +71,7 @@ export function createSqlStudioServer(options: CreateSqlStudioServerOptions): Sq
 
     const handleMessage = async (message: StudioClientMessage): Promise<StudioServerMessage[]> => {
         if (!isClientMessage(message)) {
-            return [
-                {
-                    v: PROTOCOL_VERSION,
-                    type: "error",
-                    code: "bad_message",
-                    message: "invalid Studio Protocol message",
-                },
-            ];
+            return [errorMessage("bad_message", "invalid Studio Protocol message")];
         }
 
         switch (message.type) {
@@ -96,34 +96,13 @@ export function createSqlStudioServer(options: CreateSqlStudioServerOptions): Sq
             case "openConnection": {
                 const reg = byId.get(message.datasourceId);
                 if (!reg) {
-                    return [
-                        {
-                            v: PROTOCOL_VERSION,
-                            type: "error",
-                            code: "unknown_datasource",
-                            message: `unknown datasource ${message.datasourceId}`,
-                        },
-                    ];
+                    return [errorMessage("unknown_datasource", `unknown datasource ${message.datasourceId}`)];
                 }
                 if (!isSqlDriver(reg.driver)) {
-                    return [
-                        {
-                            v: PROTOCOL_VERSION,
-                            type: "error",
-                            code: "driver_unavailable",
-                            message: `datasource ${reg.id} has no SqlDriver (Redis/Mongo use native openers)`,
-                        },
-                    ];
+                    return [errorMessage("driver_unavailable", `datasource ${reg.id} has no SqlDriver (Redis/Mongo use native openers)`)];
                 }
                 if (live.has(message.connectionId)) {
-                    return [
-                        {
-                            v: PROTOCOL_VERSION,
-                            type: "error",
-                            code: "connection_exists",
-                            message: `connection ${message.connectionId} already open`,
-                        },
-                    ];
+                    return [errorMessage("connection_exists", `connection ${message.connectionId} already open`)];
                 }
                 live.set(message.connectionId, {
                     datasourceId: reg.id,
@@ -164,15 +143,7 @@ export function createSqlStudioServer(options: CreateSqlStudioServerOptions): Sq
             case "query": {
                 const conn = live.get(message.connectionId);
                 if (!conn) {
-                    return [
-                        {
-                            v: PROTOCOL_VERSION,
-                            type: "error",
-                            code: "no_connection",
-                            message: `connection ${message.connectionId} is not open`,
-                            requestId: message.requestId,
-                        },
-                    ];
+                    return [errorMessage("no_connection", `connection ${message.connectionId} is not open`, message.requestId)];
                 }
                 const ac = new CancelToken();
                 inflight.set(message.requestId, ac);
@@ -219,14 +190,7 @@ export function createSqlStudioServer(options: CreateSqlStudioServerOptions): Sq
             }
 
             default:
-                return [
-                    {
-                        v: PROTOCOL_VERSION,
-                        type: "error",
-                        code: "unsupported",
-                        message: "unsupported message type",
-                    },
-                ];
+                return [errorMessage("unsupported", "unsupported message type")];
         }
     };
 

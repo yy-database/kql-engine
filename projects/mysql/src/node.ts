@@ -10,6 +10,14 @@ import type { ByteDuplex, ByteHandlers } from "./duplex.ts";
 import { createMysqlClient, readHandshake, type MysqlClient, MysqlSession } from "./index.ts";
 import { comQuery } from "./query.ts";
 
+export {
+    nativePasswordToken,
+    cachingSha2Token,
+    buildHandshakeResponse41,
+} from "./auth.ts";
+export { authenticate } from "./authenticate.ts";
+export { MysqlWireConnection } from "./connection.ts";
+
 export type MysqlTcpOptions = {
     host?: string;
     port?: number;

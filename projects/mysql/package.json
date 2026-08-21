@@ -1,7 +1,7 @@
 {
     "name": "@yydb/mysql",
-    "version": "0.1.0",
-    "description": "MySQL driver for SQL Studio / sql-studio-orm",
+    "version": "0.0.1",
+    "description": "MySQL driver for SQL Studio / sql-studio-orm — 0.0.1 Developer Preview",
     "type": "module",
     "license": "MPL-2.0",
     "sideEffects": false,
@@ -36,6 +36,7 @@
         "typescript": "^5.9.2"
     },
     "publishConfig": {
-        "access": "public"
+        "access": "public",
+        "tag": "dev"
     }
 }

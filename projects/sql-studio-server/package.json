@@ -1,7 +1,7 @@
 {
     "name": "@yydb/sql-studio-server",
-    "version": "0.1.0",
-    "description": "SQL Studio server host — auth, connections, query, drivers",
+    "version": "0.0.1",
+    "description": "SQL Studio server host — auth, connections, query, drivers — 0.0.1 Developer Preview",
     "type": "module",
     "license": "MPL-2.0",
     "sideEffects": false,
@@ -26,9 +26,15 @@
         "@yydb/sql-studio-protocol": "workspace:*"
     },
     "devDependencies": {
-        "typescript": "^5.9.2"
+        "typescript": "^5.9.2",
+        "@yydb/postgres": "workspace:*",
+        "@yydb/mysql": "workspace:*",
+        "@yydb/sqlite": "workspace:*",
+        "@yydb/redis": "workspace:*",
+        "@yydb/mongodb": "workspace:*"
     },
     "publishConfig": {
-        "access": "public"
+        "access": "public",
+        "tag": "dev"
     }
 }

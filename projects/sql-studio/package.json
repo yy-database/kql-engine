@@ -1,7 +1,7 @@
 {
     "name": "@yydb/sql-studio",
-    "version": "0.1.0",
-    "description": "SQL Studio — browser workbench + `sql` CLI",
+    "version": "0.0.1",
+    "description": "SQL Studio — browser workbench + `sql` CLI — 0.0.1 Developer Preview",
     "type": "module",
     "license": "MPL-2.0",
     "sideEffects": false,
@@ -15,6 +15,12 @@
             "types": "./src/index.ts",
             "import": "./src/index.ts",
             "default": "./src/index.ts"
+        },
+        "./cli": {
+            "types": "./src/create-cli.ts",
+            "import": "./src/create-cli.ts",
+            "node": "./src/create-cli.ts",
+            "default": "./src/create-cli.ts"
         }
     },
     "files": [
@@ -27,7 +33,9 @@
     },
     "dependencies": {
         "@yydb/sql-studio-protocol": "workspace:*",
-        "cac": "^6.7.14"
+        "cac": "^6.7.14",
+        "@yydb/sql-studio-orm": "workspace:*",
+        "@yydb/sql-studio-server": "workspace:*"
     },
     "devDependencies": {
         "@types/node": "^22.15.0",
@@ -37,6 +45,7 @@
         "node": ">=18"
     },
     "publishConfig": {
-        "access": "public"
+        "access": "public",
+        "tag": "dev"
     }
 }

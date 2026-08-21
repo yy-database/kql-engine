@@ -2,8 +2,8 @@
 
 MySQL driver for **SQL Studio** / `@yydb/sql-studio-orm`.
 
-Wire path (`@yydb/mysql/node`): TCP/TLS → HandshakeV10 → auth
-(`mysql_native_password` / `caching_sha2_password` fast path) →
+Wire path (`@yydb/mysql/node`): TCP/TLS → HandshakeV10 → auth (`mysql_native_password` / `caching_sha2_password` fast
+path) →
 `SqlConnection.execute` via COM_QUERY.
 
 ```ts
@@ -26,7 +26,7 @@ await client.connection.execute({
 });
 ```
 
-`caching_sha2_password` full auth (status 0x04) requires TLS; otherwise switch
-the account to `mysql_native_password` or enable `tls: true`.
+`caching_sha2_password` full auth (status 0x04) requires TLS; otherwise switch the account to `mysql_native_password` or
+enable `tls: true`.
 
 Browsers use `@yydb/sql-studio` → server; they do not speak MySQL wire.

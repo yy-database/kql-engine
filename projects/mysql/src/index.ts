@@ -15,16 +15,11 @@ export { encodePacket, PacketReader } from "./packet.ts";
 export { parseHandshakeV10 } from "./handshake.ts";
 export { MysqlSession } from "./session.ts";
 export type { ByteDuplex, ByteHandlers } from "./duplex.ts";
-export {
-    nativePasswordToken,
-    cachingSha2Token,
-    buildHandshakeResponse41,
-} from "./auth.ts";
-export { authenticate } from "./authenticate.ts";
-export { MysqlWireConnection } from "./connection.ts";
 export { comQuery, bindMysqlParameters } from "./query.ts";
+// Auth / TCP / wire connection live on `@yydb/mysql/node` (node:crypto + node:net).
 
 export const DRIVER_ID = "mysql" as const;
+export const DRIVER_STATUS = "experimental" as const;
 
 export type MysqlPoolOptions = {
     min?: number;
@@ -100,12 +95,7 @@ class MysqlDriver implements SqlDriver {
 
     async acquire(): Promise<SqlConnection> {
         if (this.#live) return this.#live;
-        const node = await import("./node.ts");
-        this.#live = await node.openMysqlConnection({
-            url: this.url,
-            tls: this.tls,
-        });
-        return this.#live;
+        throw new Error("@yydb/mysql: TCP acquire is Node-only — import openMysqlConnection from @yydb/mysql/node");
     }
 
     async destroy(): Promise<void> {
